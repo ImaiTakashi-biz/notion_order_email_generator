@@ -8,7 +8,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
-from collections import defaultdict
+
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
@@ -85,38 +85,7 @@ def get_order_data_from_notion():
     except Exception as e: print(f"Notion DB処理エラー: {e}")
     return order_list
 
-def create_order_pdf(supplier_name, items, sales_contact, sender_info):
-    excel_app = None
-    try:
-        excel_app = win32com.client.Dispatch("Excel.Application")
-        excel_app.Visible = False
-        wb = openpyxl.load_workbook(EXCEL_TEMPLATE_PATH)
-        ws = wb.active
-        ws["A5"] = f"{supplier_name} 御中"; ws["A7"] = f"{sales_contact} 様"
-        ws["D8"] = f"担当：{sender_info['name']}"
-        ws["D14"] = sender_info["email"]
 
-        for i, item in enumerate(items): ws[f"A{16+i}"], ws[f"B{16+i}"], ws[f"C{16+i}"] = item["db_part_number"], item["maker_name"], item["quantity"]
-        
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        safe_supplier_name = re.sub(r'''[\\/:*?"<>|]''', '_', supplier_name)
-        pdf_filename = f"{timestamp}_{safe_supplier_name}_注文書.pdf"
-        if not os.path.exists(PDF_SAVE_DIR): os.makedirs(PDF_SAVE_DIR)
-        pdf_path = os.path.join(PDF_SAVE_DIR, pdf_filename)
-        temp_excel_path = os.path.join(PDF_SAVE_DIR, f"temp_{timestamp}.xlsx")
-        
-        wb.save(temp_excel_path)
-        wb.close()
-
-        workbook = excel_app.Workbooks.Open(temp_excel_path)
-        workbook.ActiveSheet.ExportAsFixedFormat(0, pdf_path)
-        workbook.Close(False)
-        os.remove(temp_excel_path)
-        print(f"-> PDF作成完了: {pdf_filename}")
-        return pdf_path
-    except Exception as e: print(f"PDF作成エラー ({supplier_name}): {e}"); return None
-    finally: 
-        if excel_app: excel_app.Quit()
 
 def send_smtp_mail(info, pdf_path, sender_creds):
     try:
@@ -162,11 +131,75 @@ class Application(ttk.Frame):
         self.master.title("Notion注文書メール作成アプリ")
         self.q = queue.Queue(); self.queue_io = QueueIO(self.q)
         self.processing = False; self.order_data = []; self.current_pdf_path = None; self.sent_suppliers = set()
-        self.accounts = {}; self.selected_account = tk.StringVar()
+        self.accounts = {}; self.selected_account = tk.StringVar(); self.excel_app = None
         self.load_accounts_from_env()
         self.configure_styles()
         self.create_widgets()
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def create_order_pdf(self, supplier_name, items, sales_contact, sender_info):
+        try:
+            if self.excel_app is None:
+                self.excel_app = win32com.client.Dispatch("Excel.Application")
+                self.excel_app.Visible = False
+            
+            wb = openpyxl.load_workbook(EXCEL_TEMPLATE_PATH)
+            ws = wb.active
+            ws["A5"] = f"{supplier_name} 御中"; ws["A7"] = f"{sales_contact} 様"
+            ws["D8"] = f"担当：{sender_info['name']}"
+            ws["D14"] = sender_info["email"]
+
+            for i, item in enumerate(items): ws[f"A{16+i}"], ws[f"B{16+i}"], ws[f"C{16+i}"] = item["db_part_number"], item["maker_name"], item["quantity"]
+            
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            safe_supplier_name = re.sub(r'[\\/:*?"<>|]', '_', supplier_name)
+            pdf_filename = f"{timestamp}_{safe_supplier_name}_注文書.pdf"
+            if not os.path.exists(PDF_SAVE_DIR): os.makedirs(PDF_SAVE_DIR)
+            pdf_path = os.path.join(PDF_SAVE_DIR, pdf_filename)
+            temp_excel_path = os.path.join(PDF_SAVE_DIR, f"temp_{timestamp}.xlsx")
+            
+            wb.save(temp_excel_path)
+            wb.close()
+
+            workbook = self.excel_app.Workbooks.Open(temp_excel_path)
+            workbook.ActiveSheet.ExportAsFixedFormat(0, pdf_path)
+            workbook.Close(False)
+            os.remove(temp_excel_path)
+            print(f"-> PDF作成完了: {pdf_filename}")
+            return pdf_path
+        except Exception as e: print(f"PDF作成エラー ({supplier_name}): {e}"); return None
+
+    def create_order_pdf(self, supplier_name, items, sales_contact, sender_info):
+        try:
+            if self.excel_app is None:
+                self.excel_app = win32com.client.Dispatch("Excel.Application")
+                self.excel_app.Visible = False
+            
+            wb = openpyxl.load_workbook(EXCEL_TEMPLATE_PATH)
+            ws = wb.active
+            ws["A5"] = f"{supplier_name} 御中"; ws["A7"] = f"{sales_contact} 様"
+            ws["D8"] = f"担当：{sender_info['name']}"
+            ws["D14"] = sender_info["email"]
+
+            for i, item in enumerate(items): ws[f"A{16+i}"], ws[f"B{16+i}"], ws[f"C{16+i}"] = item["db_part_number"], item["maker_name"], item["quantity"]
+            
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            safe_supplier_name = re.sub(r'[\/:*?"<>|]', '_', supplier_name)
+            pdf_filename = f"{timestamp}_{safe_supplier_name}_注文書.pdf"
+            if not os.path.exists(PDF_SAVE_DIR): os.makedirs(PDF_SAVE_DIR)
+            pdf_path = os.path.join(PDF_SAVE_DIR, pdf_filename)
+            temp_excel_path = os.path.join(PDF_SAVE_DIR, f"temp_{timestamp}.xlsx")
+            
+            wb.save(temp_excel_path)
+            wb.close()
+
+            workbook = self.excel_app.Workbooks.Open(temp_excel_path)
+            workbook.ActiveSheet.ExportAsFixedFormat(0, pdf_path)
+            workbook.Close(False)
+            os.remove(temp_excel_path)
+            print(f"-> PDF作成完了: {pdf_filename}")
+            return pdf_path
+        except Exception as e: print(f"PDF作成エラー ({supplier_name}): {e}"); return None
 
     def load_accounts_from_env(self):
         config = dotenv_values()
@@ -285,7 +318,7 @@ class Application(ttk.Frame):
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
         print(f"「{selected_supplier}」のPDFを作成中...")
         items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
-        pdf_path = create_order_pdf(selected_supplier, items, items[0]["sales_contact"], sender_info)
+        pdf_path = self.create_order_pdf(selected_supplier, items, items[0]["sales_contact"], sender_info)
         self.q.put(("update_preview_ui", (items[0], pdf_path)))
 
     def send_mail_task(self):
@@ -387,7 +420,19 @@ class Application(ttk.Frame):
 
     def on_closing(self):
         if self.processing: return messagebox.showwarning("処理中", "処理が実行中です。終了できません。")
+        self.close_excel_app()
         self.master.destroy()
+
+    def close_excel_app(self):
+        if self.excel_app:
+            try:
+                # Close all open workbooks without saving
+                for workbook in self.excel_app.Workbooks:
+                    workbook.Close(SaveChanges=False)
+                self.excel_app.Quit(SaveChanges=False)
+                self.excel_app = None
+            except Exception as e:
+                print(f"Excel終了エラー: {e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
