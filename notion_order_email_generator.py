@@ -16,7 +16,7 @@ from tkinter import scrolledtext, messagebox, ttk
 
 import openpyxl
 import win32com.client # PDF作成時のExcel操作にのみ使用
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 from notion_client import Client
 
 # .envファイルから環境変数を読み込む
@@ -85,7 +85,7 @@ def get_order_data_from_notion():
     except Exception as e: print(f"Notion DB処理エラー: {e}")
     return order_list
 
-def create_order_pdf(supplier_name, items, sales_contact):
+def create_order_pdf(supplier_name, items, sales_contact, sender_info):
     excel_app = None
     try:
         excel_app = win32com.client.Dispatch("Excel.Application")
@@ -93,6 +93,9 @@ def create_order_pdf(supplier_name, items, sales_contact):
         wb = openpyxl.load_workbook(EXCEL_TEMPLATE_PATH)
         ws = wb.active
         ws["A5"] = f"{supplier_name} 御中"; ws["A7"] = f"{sales_contact} 様"
+        ws["D8"] = f"担当：{sender_info['name']}"
+        ws["D14"] = sender_info["email"]
+
         for i, item in enumerate(items): ws[f"A{16+i}"], ws[f"B{16+i}"], ws[f"C{16+i}"] = item["db_part_number"], item["maker_name"], item["quantity"]
         
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -157,7 +160,6 @@ class Application(ttk.Frame):
         super().__init__(master)
         self.master = master
         self.master.title("Notion注文書メール作成アプリ")
-        self.master.geometry("1000x700")
         self.q = queue.Queue(); self.queue_io = QueueIO(self.q)
         self.processing = False; self.order_data = []; self.current_pdf_path = None; self.sent_suppliers = set()
         self.accounts = {}; self.selected_account = tk.StringVar()
@@ -167,61 +169,66 @@ class Application(ttk.Frame):
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def load_accounts_from_env(self):
+        config = dotenv_values()
         sender_prefix = "EMAIL_SENDER_"
-        for key, value in os.environ.items():
-            if key.startswith(sender_prefix):
-                account_name = key[len(sender_prefix):]
-                password_key = f"EMAIL_PASSWORD_{account_name}"
-                password = os.getenv(password_key)
-                if value and password:
-                    self.accounts[account_name] = {"sender": value, "password": password}
+        sender_keys = [key for key in config if key.startswith(sender_prefix)]
+        for key in sender_keys:
+            account_name = key[len(sender_prefix):]
+            password_key = f"EMAIL_PASSWORD_{account_name}"
+            sender_email = config.get(key)
+            password = config.get(password_key)
+            if sender_email and password:
+                self.accounts[account_name] = {"sender": sender_email, "password": password}
         if self.accounts:
-            self.selected_account.set(list(self.accounts.keys())[0])
+            account_names = list(self.accounts.keys())
+            self.selected_account.set(account_names[0])
 
     def configure_styles(self):
         style = ttk.Style(self.master); style.theme_use("clam")
-        self.BG_COLOR = "#E8F0F9"; self.TEXT_COLOR = "#00224D"; self.BUTTON_BG = "#4A90E2"; self.BUTTON_FG = "#FFFFFF"; self.PROGRESS_BG = "#4A90E2"; self.HEADER_BG = "#357ABD"
-        style.configure(".", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 9))
+        self.BG_COLOR = "#E8F0F9"; self.TEXT_COLOR = "#00224D"; self.BUTTON_BG = "#4A90E2"; self.BUTTON_FG = "#FFFFFF"; self.PROGRESS_BG = "#4A90E2"; self.HEADER_BG = "#357ABD";         self.EMPHASIS_COLOR = "#007BFF"
+        style.configure(".", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 10))
         style.configure("TFrame", background=self.BG_COLOR)
-        style.configure("TLabel", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 9))
+        style.configure("TLabel", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 10))
         style.configure("TLabelFrame", background=self.BG_COLOR, bordercolor=self.HEADER_BG)
-        style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 10, "bold"))
-        style.configure("TButton", background=self.BUTTON_BG, foreground=self.BUTTON_FG, font=("Yu Gothic UI", 10, "bold"), borderwidth=0)
+        style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 12, "bold"))
+        style.configure("TButton", background=self.BUTTON_BG, foreground=self.BUTTON_FG, font=("Yu Gothic UI", 11, "bold"), borderwidth=0, padding=5)
         style.map("TButton", background=[("active", "#357ABD"), ("disabled", "#C0C0C0")])
-        style.configure("Treeview", background="#FFFFFF", fieldbackground="#FFFFFF", foreground=self.TEXT_COLOR)
+        style.configure("Treeview", background="#FFFFFF", fieldbackground="#FFFFFF", foreground=self.TEXT_COLOR, rowheight=25, font=("Yu Gothic UI", 9))
         style.map("Treeview", background=[("selected", "#4A90E2")], foreground=[("selected", "#FFFFFF")])
-        style.configure("Treeview.Heading", background=self.HEADER_BG, foreground=self.BUTTON_FG, font=("Yu Gothic UI", 9, "bold"))
+        style.configure("Treeview.Heading", background=self.HEADER_BG, foreground=self.BUTTON_FG, font=("Yu Gothic UI", 10, "bold"))
         style.map("Treeview.Heading", background=[("active", "#4A90E2")])
-        style.configure("Sent.TLabel", foreground="gray")
+        style.configure("TCombobox", font=("Yu Gothic UI", 10))
 
     def create_widgets(self):
-        self.pack(fill=tk.BOTH, expand=True)
-        main_paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL); main_paned.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        left_pane = ttk.Frame(main_paned, padding=5); main_paned.add(left_pane, weight=3)
-        right_pane = ttk.Frame(main_paned, padding=5); main_paned.add(right_pane, weight=2)
+        self.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # --- Left Pane ---
-        table_frame = ttk.LabelFrame(left_pane, text="発注対象データ"); table_frame.pack(fill=tk.BOTH, expand=True)
-        columns = ("maker", "part_num", "qty", "supplier"); self.tree = ttk.Treeview(table_frame, columns=columns, show="headings")
-        self.tree.heading("maker", text="メーカー"); self.tree.heading("part_num", text="品番"); self.tree.heading("qty", text="数量"); self.tree.heading("supplier", text="仕入先")
-        self.tree.column("maker", width=120); self.tree.column("part_num", width=180); self.tree.column("qty", width=40, anchor=tk.E); self.tree.column("supplier", width=120)
-        vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview); hsb = ttk.Scrollbar(table_frame, orient="horizontal", command=self.tree.xview)
-        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set); vsb.pack(side=tk.RIGHT, fill=tk.Y); hsb.pack(side=tk.BOTTOM, fill=tk.X); self.tree.pack(fill=tk.BOTH, expand=True)
+        # --- Top Action Pane ---
+        top_pane = ttk.Frame(self, padding=10); top_pane.pack(fill=tk.X)
+        account_frame = ttk.LabelFrame(top_pane, text="送信者アカウント"); account_frame.pack(side=tk.LEFT, padx=(0, 20), fill=tk.X, expand=True)
+        self.account_selector = ttk.Combobox(account_frame, textvariable=self.selected_account, values=sorted(list(self.accounts.keys())), state="readonly", width=30, font=("Yu Gothic UI", 11)); self.account_selector.pack(padx=10, pady=10, fill=tk.X)
+        self.get_data_button = ttk.Button(top_pane, text="1. Notionからデータを取得", command=self.start_data_retrieval); self.get_data_button.pack(side=tk.LEFT, ipady=5, ipadx=5, padx=10)
 
-        # --- Right Pane ---
-        action_pane = ttk.Frame(right_pane); action_pane.pack(fill=tk.BOTH, expand=True)
+        # --- Middle Content Pane ---
+        middle_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL); middle_pane.pack(fill=tk.BOTH, expand=True, pady=10)
         
-        account_frame = ttk.LabelFrame(action_pane, text="送信者アカウント"); account_frame.pack(fill=tk.X, pady=5)
-        self.account_selector = ttk.Combobox(account_frame, textvariable=self.selected_account, values=list(self.accounts.keys()), state="readonly"); self.account_selector.pack(fill=tk.X, padx=5, pady=5)
+        supplier_pane = ttk.Frame(middle_pane, padding=5); middle_pane.add(supplier_pane, weight=1)
+        table_pane = ttk.Frame(middle_pane, padding=5); middle_pane.add(table_pane, weight=2)
 
-        self.get_data_button = ttk.Button(action_pane, text="1. Notionからデータを取得", command=self.start_data_retrieval); self.get_data_button.pack(fill=tk.X, pady=5)
-        
-        supplier_frame = ttk.LabelFrame(action_pane, text="2. 仕入先を選択"); supplier_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        self.supplier_listbox = tk.Listbox(supplier_frame, exportselection=False, bg="#FFFFFF", fg=self.TEXT_COLOR, selectbackground=self.HEADER_BG, selectforeground=self.BUTTON_FG)
+        supplier_frame = ttk.LabelFrame(supplier_pane, text="2. 仕入先リスト"); supplier_frame.pack(fill=tk.BOTH, expand=True)
+        self.supplier_listbox = tk.Listbox(supplier_frame, exportselection=False, bg="#FFFFFF", fg=self.TEXT_COLOR, selectbackground=self.HEADER_BG, selectforeground=self.BUTTON_FG, font=("Yu Gothic UI", 11))
         self.supplier_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True); self.supplier_listbox.bind("<<ListboxSelect>>", self.on_supplier_select)
         supplier_vsb = ttk.Scrollbar(supplier_frame, orient="vertical", command=self.supplier_listbox.yview); self.supplier_listbox.config(yscrollcommand=supplier_vsb.set); supplier_vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
-        preview_frame = ttk.LabelFrame(action_pane, text="3. 内容を確認して送信"); preview_frame.pack(fill=tk.X, pady=5)
+        table_frame = ttk.LabelFrame(table_pane, text="発注対象データ (選択した仕入先)"); table_frame.pack(fill=tk.BOTH, expand=True)
+        columns = ("maker", "part_num", "qty"); self.tree = ttk.Treeview(table_frame, columns=columns, show="headings")
+        self.tree.heading("maker", text="メーカー"); self.tree.heading("part_num", text="品番"); self.tree.heading("qty", text="数量")
+        self.tree.column("maker", width=150); self.tree.column("part_num", width=250); self.tree.column("qty", width=60, anchor=tk.E)
+        vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview); hsb = ttk.Scrollbar(table_frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set); vsb.pack(side=tk.RIGHT, fill=tk.Y); hsb.pack(side=tk.BOTTOM, fill=tk.X); self.tree.pack(fill=tk.BOTH, expand=True)
+
+        # --- Bottom Action Pane ---
+        bottom_pane = ttk.Frame(self, padding=10); bottom_pane.pack(fill=tk.X)
+        preview_frame = ttk.LabelFrame(bottom_pane, text="3. 内容を確認して送信"); preview_frame.pack(fill=tk.X, expand=True, side=tk.LEFT, padx=(0, 20))
         self.to_var, self.cc_var, self.contact_var, self.pdf_var = tk.StringVar(), tk.StringVar(), tk.StringVar(), tk.StringVar()
         ttk.Label(preview_frame, text="宛先(To):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
         ttk.Label(preview_frame, textvariable=self.to_var).grid(row=0, column=1, sticky=tk.W, padx=5)
@@ -233,11 +240,13 @@ class Application(ttk.Frame):
         self.pdf_label = ttk.Label(preview_frame, textvariable=self.pdf_var, foreground="blue", cursor="hand2"); self.pdf_label.grid(row=3, column=1, sticky=tk.W, padx=5)
         self.pdf_label.bind("<Button-1>", lambda e: self.open_current_pdf())
 
-        self.send_mail_button = ttk.Button(action_pane, text="メール送信", command=self.send_single_mail, state="disabled"); self.send_mail_button.pack(fill=tk.X, pady=5)
+        send_button_frame = ttk.Frame(bottom_pane); send_button_frame.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
+        self.send_mail_button = ttk.Button(send_button_frame, text="メール送信", command=self.send_single_mail, state="disabled"); self.send_mail_button.pack(expand=True, ipady=10, ipadx=10)
 
-        log_frame = ttk.LabelFrame(action_pane, text="ログ"); log_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        self.log_display = scrolledtext.ScrolledText(log_frame, height=5, wrap=tk.WORD, bg="#FFFFFF", fg=self.TEXT_COLOR); self.log_display.pack(fill=tk.BOTH, expand=True); self.log_display.configure(state='disabled')
-        self.exit_button = ttk.Button(action_pane, text="終了", command=self.on_closing); self.exit_button.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
+        # --- Log Pane ---
+        log_frame = ttk.LabelFrame(self, text="ログ"); log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5,0))
+        self.log_display = scrolledtext.ScrolledText(log_frame, height=5, wrap=tk.WORD, bg="#FFFFFF", fg=self.TEXT_COLOR, font=("Yu Gothic UI", 12)); self.log_display.pack(fill=tk.BOTH, expand=True); self.log_display.configure(state='disabled')
+        self.log_display.tag_configure("emphasis", foreground=self.EMPHASIS_COLOR, font=("Yu Gothic UI", 12, "bold"))
 
     def start_data_retrieval(self):
         if self.processing: return
@@ -251,6 +260,7 @@ class Application(ttk.Frame):
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
         if selected_supplier in self.sent_suppliers: self.clear_preview(); return
         self.processing = True; self.toggle_buttons(False)
+        self.update_table_for_supplier(selected_supplier)
         threading.Thread(target=self.run_thread, args=(self.create_pdf_task,)).start()
         self.master.after(100, self.check_queue)
 
@@ -269,10 +279,13 @@ class Application(ttk.Frame):
 
     def get_data_task(self): print("Notionからデータ取得中..."); data = get_order_data_from_notion(); self.q.put(("update_data_ui", data))
     def create_pdf_task(self):
+        account_name = self.selected_account.get()
+        sender_creds = self.accounts[account_name]
+        sender_info = {"name": account_name, "email": sender_creds["sender"]}
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
         print(f"「{selected_supplier}」のPDFを作成中...")
         items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
-        pdf_path = create_order_pdf(selected_supplier, items, items[0]["sales_contact"])
+        pdf_path = create_order_pdf(selected_supplier, items, items[0]["sales_contact"], sender_info)
         self.q.put(("update_preview_ui", (items[0], pdf_path)))
 
     def send_mail_task(self):
@@ -298,21 +311,31 @@ class Application(ttk.Frame):
                 elif command == "task_complete": self.processing = False; self.toggle_buttons(True)
         except queue.Empty: self.master.after(100, self.check_queue)
 
-    def log(self, message):
-        self.log_display.config(state="normal"); self.log_display.insert(tk.END, message + "\n"); self.log_display.see(tk.END); self.log_display.config(state="disabled")
+    def log(self, message, tag=None):
+        self.log_display.config(state="normal")
+        if tag:
+            self.log_display.insert(tk.END, message + "\n", tag)
+        else:
+            self.log_display.insert(tk.END, message + "\n")
+        self.log_display.see(tk.END)
+        self.log_display.config(state="disabled")
 
     def update_data_ui(self, data):
         self.order_data = data; self.sent_suppliers.clear()
-        self.update_table(data); self.update_supplier_list(data)
+        self.tree.delete(*self.tree.get_children())
+        self.update_supplier_list(data)
         if not data: self.log("-> 発注対象のデータは見つかりませんでした。")
-        else: self.log("-> データ取得完了。右のリストから仕入先を選択してください。")
+        else: self.log("-> データ取得完了。左のリストから仕入先を選択してください。", "emphasis")
 
     def update_preview_ui(self, data):
         info, pdf_path = data
         self.current_pdf_path = pdf_path
         self.to_var.set(info.get("email", "")); self.cc_var.set(info.get("email_cc", "")); self.contact_var.set(info.get("sales_contact", ""))
         self.pdf_var.set(os.path.basename(pdf_path) if pdf_path else "作成失敗")
-        self.log("-> プレビューの準備ができました。"); self.log("   宛先、担当者、PDFの内容を必ず確認してください。"); self.log("   (PDFファイル名をクリックすると内容を開けます)"); self.log("-> 問題がなければ「メール送信」ボタンを押してください。")
+        self.log("-> プレビューの準備ができました。")
+        self.log("   宛先、担当者、PDFの内容を必ず確認してください。", "emphasis")
+        self.log("   (PDFファイル名をクリックすると内容を開けます)", "emphasis")
+        self.log("-> 問題がなければ「メール送信」ボタンを押してください。", "emphasis")
 
     def ask_and_update_notion(self, supplier, page_ids):
         if messagebox.askyesno("Notion更新確認", f"メール送信が完了しました。\n\n「{supplier}」のNotionページの「発注日」を更新しますか？"):
@@ -336,9 +359,21 @@ class Application(ttk.Frame):
         status = "更新済み" if updated else "更新スキップ"
         self.log(f"-> 「{supplier}」は送信済みとしてマークされました。({status})")
 
-    def update_table(self, data): self.tree.delete(*self.tree.get_children()); [self.tree.insert("", tk.END, values=(i.get("maker_name", ""), i.get("db_part_number", ""), i.get("quantity", 0), i.get("supplier_name", ""))) for i in data]
-    def update_supplier_list(self, data): self.supplier_listbox.delete(0, tk.END); [self.supplier_listbox.insert(tk.END, s) for s in sorted(list(set(i["supplier_name"] for i in data)))]
-    def clear_displays(self): self.tree.delete(*self.tree.get_children()); self.supplier_listbox.delete(0, tk.END); self.sent_suppliers.clear(); self.clear_preview(); self.log_display.config(state="normal"); self.log_display.delete(1.0, tk.END); self.log_display.config(state="disabled")
+    def update_table_for_supplier(self, supplier_name):
+        self.tree.delete(*self.tree.get_children())
+        items_to_display = [item for item in self.order_data if item["supplier_name"] == supplier_name]
+        for item in items_to_display:
+            self.tree.insert("", tk.END, values=(item.get("maker_name", ""), item.get("db_part_number", ""), item.get("quantity", 0)))
+
+    def update_supplier_list(self, data):
+        self.supplier_listbox.delete(0, tk.END)
+        suppliers = sorted(list(set(i["supplier_name"] for i in data)))
+        for s in suppliers: self.supplier_listbox.insert(tk.END, s)
+
+    def clear_displays(self): 
+        self.tree.delete(*self.tree.get_children()); self.supplier_listbox.delete(0, tk.END); self.sent_suppliers.clear(); self.clear_preview()
+        self.log_display.config(state="normal"); self.log_display.delete(1.0, tk.END); self.log_display.config(state="disabled")
+
     def clear_preview(self): self.to_var.set(""); self.cc_var.set(""); self.contact_var.set(""); self.pdf_var.set(""); self.current_pdf_path = None; self.send_mail_button.config(state="disabled")
     def toggle_buttons(self, enabled): 
         state = "normal" if enabled else "disabled"
