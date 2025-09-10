@@ -26,11 +26,9 @@ load_dotenv()
 NOTION_API_TOKEN = os.getenv("NOTION_API_TOKEN")
 PAGE_ID_CONTAINING_DB = os.getenv("NOTION_DATABASE_ID")
 EXCEL_TEMPLATE_PATH = r"C:\Users\SEIZOU-20\Desktop\注文書.xlsx"
-PDF_SAVE_DIR = os.path.join(Path.home(), "Desktop", "注文書") # 保存先をデスクトップの「注文書」フォルダに
+PDF_SAVE_DIR = os.path.join(Path.home(), "Desktop", "注文書")
 
-# SMTP設定
-EMAIL_SENDER = os.getenv("EMAIL_SENDER")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+# SMTPサーバー情報 (アカウント情報はアプリ内で動的に読み込み)
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.office365.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 
@@ -117,10 +115,10 @@ def create_order_pdf(supplier_name, items, sales_contact):
     finally: 
         if excel_app: excel_app.Quit()
 
-def send_smtp_mail(info, pdf_path):
+def send_smtp_mail(info, pdf_path, sender_creds):
     try:
         msg = MIMEMultipart()
-        msg["From"] = EMAIL_SENDER
+        msg["From"] = sender_creds["sender"]
         msg["To"] = info["email"]
         if info["email_cc"]: msg["Cc"] = info["email_cc"]
         msg["Subject"] = "注文書送付の件"
@@ -135,10 +133,10 @@ def send_smtp_mail(info, pdf_path):
 
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
-            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+            server.login(sender_creds["sender"], sender_creds["password"])
             recipients = [info["email"]] + ([info["email_cc"]] if info["email_cc"] else [])
-            server.sendmail(EMAIL_SENDER, recipients, msg.as_string())
-        print(f"-> メール送信完了: {info['email']}")
+            server.sendmail(sender_creds["sender"], recipients, msg.as_string())
+        print(f"-> メール送信完了 (From: {sender_creds['sender']})")
         return True
     except Exception as e: print(f"メール送信エラー: {e}"); return False
 
@@ -162,9 +160,23 @@ class Application(ttk.Frame):
         self.master.geometry("1000x700")
         self.q = queue.Queue(); self.queue_io = QueueIO(self.q)
         self.processing = False; self.order_data = []; self.current_pdf_path = None; self.sent_suppliers = set()
+        self.accounts = {}; self.selected_account = tk.StringVar()
+        self.load_accounts_from_env()
         self.configure_styles()
         self.create_widgets()
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def load_accounts_from_env(self):
+        sender_prefix = "EMAIL_SENDER_"
+        for key, value in os.environ.items():
+            if key.startswith(sender_prefix):
+                account_name = key[len(sender_prefix):]
+                password_key = f"EMAIL_PASSWORD_{account_name}"
+                password = os.getenv(password_key)
+                if value and password:
+                    self.accounts[account_name] = {"sender": value, "password": password}
+        if self.accounts:
+            self.selected_account.set(list(self.accounts.keys())[0])
 
     def configure_styles(self):
         style = ttk.Style(self.master); style.theme_use("clam")
@@ -198,6 +210,10 @@ class Application(ttk.Frame):
 
         # --- Right Pane ---
         action_pane = ttk.Frame(right_pane); action_pane.pack(fill=tk.BOTH, expand=True)
+        
+        account_frame = ttk.LabelFrame(action_pane, text="送信者アカウント"); account_frame.pack(fill=tk.X, pady=5)
+        self.account_selector = ttk.Combobox(account_frame, textvariable=self.selected_account, values=list(self.accounts.keys()), state="readonly"); self.account_selector.pack(fill=tk.X, padx=5, pady=5)
+
         self.get_data_button = ttk.Button(action_pane, text="1. Notionからデータを取得", command=self.start_data_retrieval); self.get_data_button.pack(fill=tk.X, pady=5)
         
         supplier_frame = ttk.LabelFrame(action_pane, text="2. 仕入先を選択"); supplier_frame.pack(fill=tk.BOTH, expand=True, pady=5)
@@ -225,7 +241,7 @@ class Application(ttk.Frame):
 
     def start_data_retrieval(self):
         if self.processing: return
-        if not all([NOTION_API_TOKEN, EMAIL_SENDER, EMAIL_PASSWORD]): return messagebox.showerror("設定エラー", ".envファイルにNotionとEmailの設定が必要です。")
+        if not all([NOTION_API_TOKEN, self.accounts]): return messagebox.showerror("設定エラー", ".envファイルにNotionとEmailアカウント(EMAIL_SENDER_xx)の設定が必要です。")
         self.processing = True; self.toggle_buttons(False); self.clear_displays()
         threading.Thread(target=self.run_thread, args=(self.get_data_task,)).start()
         self.master.after(100, self.check_queue)
@@ -260,10 +276,12 @@ class Application(ttk.Frame):
         self.q.put(("update_preview_ui", (items[0], pdf_path)))
 
     def send_mail_task(self):
+        account_name = self.selected_account.get()
+        sender_creds = self.accounts[account_name]
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
-        print(f"「{selected_supplier}」宛にメールを送信中...")
+        print(f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})...")
         items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
-        success = send_smtp_mail(items[0], self.current_pdf_path)
+        success = send_smtp_mail(items[0], self.current_pdf_path, sender_creds)
         if success:
             page_ids_to_update = [item['page_id'] for item in items]
             self.q.put(("ask_and_update_notion", (selected_supplier, page_ids_to_update)))
@@ -276,41 +294,32 @@ class Application(ttk.Frame):
                 elif command == "update_data_ui": self.update_data_ui(data)
                 elif command == "update_preview_ui": self.update_preview_ui(data)
                 elif command == "ask_and_update_notion": self.ask_and_update_notion(data[0], data[1])
-                elif command == "mark_as_sent_after_update": self.mark_as_sent(data[0])
+                elif command == "mark_as_sent_after_update": self.mark_as_sent(data)
                 elif command == "task_complete": self.processing = False; self.toggle_buttons(True)
         except queue.Empty: self.master.after(100, self.check_queue)
 
     def log(self, message):
-        self.log_display.config(state="normal")
-        self.log_display.insert(tk.END, message + "\n")
-        self.log_display.see(tk.END)
-        self.log_display.config(state="disabled")
+        self.log_display.config(state="normal"); self.log_display.insert(tk.END, message + "\n"); self.log_display.see(tk.END); self.log_display.config(state="disabled")
 
     def update_data_ui(self, data):
         self.order_data = data; self.sent_suppliers.clear()
         self.update_table(data); self.update_supplier_list(data)
-        if not data:
-            self.log("-> 発注対象のデータは見つかりませんでした。")
-        else:
-            self.log("-> データ取得完了。右のリストから仕入先を選択してください。")
+        if not data: self.log("-> 発注対象のデータは見つかりませんでした。")
+        else: self.log("-> データ取得完了。右のリストから仕入先を選択してください。")
 
     def update_preview_ui(self, data):
         info, pdf_path = data
         self.current_pdf_path = pdf_path
         self.to_var.set(info.get("email", "")); self.cc_var.set(info.get("email_cc", "")); self.contact_var.set(info.get("sales_contact", ""))
         self.pdf_var.set(os.path.basename(pdf_path) if pdf_path else "作成失敗")
-        self.log("-> プレビューの準備ができました。")
-        self.log("   宛先、担当者、PDFの内容を必ず確認してください。")
-        self.log("   (PDFファイル名をクリックすると内容を開けます)")
-        self.log("-> 問題がなければ「メール送信」ボタンを押してください。")
+        self.log("-> プレビューの準備ができました。"); self.log("   宛先、担当者、PDFの内容を必ず確認してください。"); self.log("   (PDFファイル名をクリックすると内容を開けます)"); self.log("-> 問題がなければ「メール送信」ボタンを押してください。")
 
     def ask_and_update_notion(self, supplier, page_ids):
         if messagebox.askyesno("Notion更新確認", f"メール送信が完了しました。\n\n「{supplier}」のNotionページの「発注日」を更新しますか？"):
             self.processing = True; self.toggle_buttons(False)
             self.log(f"「{supplier}」のNotionページを更新中...")
             threading.Thread(target=self.run_thread, args=(self.update_notion_task, page_ids)).start()
-        else:
-            self.mark_as_sent(supplier, updated=False)
+        else: self.mark_as_sent(supplier, updated=False)
 
     def update_notion_task(self, page_ids):
         update_notion_pages(page_ids)
@@ -321,8 +330,7 @@ class Application(ttk.Frame):
         self.sent_suppliers.add(supplier)
         try:
             idx = self.supplier_listbox.get(0, "end").index(supplier)
-            self.supplier_listbox.itemconfig(idx, {'fg': 'gray'})
-            self.supplier_listbox.selection_clear(idx)
+            self.supplier_listbox.itemconfig(idx, {'fg': 'gray'}); self.supplier_listbox.selection_clear(idx)
         except ValueError: pass
         self.clear_preview()
         status = "更新済み" if updated else "更新スキップ"
@@ -348,5 +356,6 @@ class Application(ttk.Frame):
 
 if __name__ == "__main__":
     root = tk.Tk()
+    root.state('zoomed')
     app = Application(master=root)
     app.mainloop()
