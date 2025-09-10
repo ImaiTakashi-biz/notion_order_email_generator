@@ -86,6 +86,7 @@ def get_order_data_from_notion():
     return order_list
 
 
+
 def send_smtp_mail(info, pdf_path, sender_creds):
     try:
         msg = MIMEMultipart()
@@ -130,21 +131,18 @@ class Application(ttk.Frame):
         self.master.title("Notion注文書メール作成アプリ")
         self.q = queue.Queue(); self.queue_io = QueueIO(self.q)
         self.processing = False; self.order_data = []; self.current_pdf_path = None; self.sent_suppliers = set()
-        self.accounts = {}; self.selected_account = tk.StringVar()
+        self.accounts = {}; self.selected_account = tk.StringVar(); self.excel_app = None
         self.load_accounts_from_env()
         self.configure_styles()
         self.create_widgets()
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-    def _create_order_pdf_in_thread(self, supplier_name, items, sales_contact, sender_info):
-        excel = None
-        workbook = None
-        temp_excel_path = None
+    def create_order_pdf(self, supplier_name, items, sales_contact, sender_info):
         try:
-            excel = win32com.client.Dispatch("Excel.Application")
-            excel.Visible = False
-            excel.DisplayAlerts = False
-
+            if self.excel_app is None:
+                self.excel_app = win32com.client.Dispatch("Excel.Application")
+                self.excel_app.Visible = False
+            
             wb = openpyxl.load_workbook(EXCEL_TEMPLATE_PATH)
             ws = wb.active
             ws["A5"] = f"{supplier_name} 御中"; ws["A7"] = f"{sales_contact} 様"
@@ -163,26 +161,13 @@ class Application(ttk.Frame):
             wb.save(temp_excel_path)
             wb.close()
 
-            workbook = excel.Workbooks.Open(temp_excel_path)
+            workbook = self.excel_app.Workbooks.Open(temp_excel_path)
             workbook.ActiveSheet.ExportAsFixedFormat(0, pdf_path)
-            
+            workbook.Close(False)
+            os.remove(temp_excel_path)
             print(f"-> PDF作成完了: {pdf_filename}")
             return pdf_path
-        except Exception as e:
-            print(f"PDF作成エラー ({supplier_name}): {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-        finally:
-            if workbook:
-                workbook.Close(SaveChanges=False)
-            if excel:
-                excel.Quit()
-            if temp_excel_path and os.path.exists(temp_excel_path):
-                try:
-                    os.remove(temp_excel_path)
-                except Exception as e:
-                    print(f"一時ファイルの削除に失敗: {e}")
+        except Exception as e: print(f"PDF作成エラー ({supplier_name}): {e}"); return None
 
     def load_accounts_from_env(self):
         config = dotenv_values()
@@ -201,34 +186,34 @@ class Application(ttk.Frame):
 
     def configure_styles(self):
         style = ttk.Style(self.master); style.theme_use("clam")
-        self.BG_COLOR = "#F5F5F5"; self.TEXT_COLOR = "#212121"; self.BUTTON_BG = "#3F51B5"; self.BUTTON_FG = "#FFFFFF"; self.HEADER_BG = "#3F51B5"; self.EMPHASIS_COLOR = "#FF4081"
+        self.BG_COLOR = "#E8F0F9"; self.TEXT_COLOR = "#00224D"; self.BUTTON_BG = "#4A90E2"; self.BUTTON_FG = "#FFFFFF"; self.PROGRESS_BG = "#4A90E2"; self.HEADER_BG = "#357ABD";         self.EMPHASIS_COLOR = "#007BFF"
         style.configure(".", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 10))
         style.configure("TFrame", background=self.BG_COLOR)
         style.configure("TLabel", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 10))
         style.configure("TLabelFrame", background=self.BG_COLOR, bordercolor=self.HEADER_BG)
         style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 12, "bold"))
-        style.configure("TButton", background=self.BUTTON_BG, foreground=self.BUTTON_FG, font=("Yu Gothic UI", 11, "bold"), borderwidth=0, padding=10)
-        style.map("TButton", background=[("active", self.HEADER_BG), ("disabled", "#C0C0C0")])
-        style.configure("Treeview", background="#FFFFFF", fieldbackground="#FFFFFF", foreground=self.TEXT_COLOR, rowheight=25, font=("Yu Gothic UI", 10))
-        style.map("Treeview", background=[("selected", self.BUTTON_BG)], foreground=[("selected", self.BUTTON_FG)])
-        style.configure("Treeview.Heading", background=self.HEADER_BG, foreground=self.BUTTON_FG, font=("Yu Gothic UI", 11, "bold"))
-        style.map("Treeview.Heading", background=[("active", self.BUTTON_BG)])
+        style.configure("TButton", background=self.BUTTON_BG, foreground=self.BUTTON_FG, font=("Yu Gothic UI", 11, "bold"), borderwidth=0, padding=5)
+        style.map("TButton", background=[("active", "#357ABD"), ("disabled", "#C0C0C0")])
+        style.configure("Treeview", background="#FFFFFF", fieldbackground="#FFFFFF", foreground=self.TEXT_COLOR, rowheight=25, font=("Yu Gothic UI", 9))
+        style.map("Treeview", background=[("selected", "#4A90E2")], foreground=[("selected", "#FFFFFF")])
+        style.configure("Treeview.Heading", background=self.HEADER_BG, foreground=self.BUTTON_FG, font=("Yu Gothic UI", 10, "bold"))
+        style.map("Treeview.Heading", background=[("active", "#4A90E2")])
         style.configure("TCombobox", font=("Yu Gothic UI", 10))
 
     def create_widgets(self):
-        self.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        self.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # --- Top Action Pane ---
-        top_pane = ttk.Frame(self, padding="15 10"); top_pane.pack(fill=tk.X)
-        account_frame = ttk.LabelFrame(top_pane, text="送信者アカウント"); account_frame.pack(side=tk.LEFT, padx=(0, 30), fill=tk.X, expand=True)
-        self.account_selector = ttk.Combobox(account_frame, textvariable=self.selected_account, values=sorted(list(self.accounts.keys())), state="readonly", width=30, font=("Yu Gothic UI", 11)); self.account_selector.pack(padx=15, pady=10, fill=tk.X)
-        self.get_data_button = ttk.Button(top_pane, text="1. Notionからデータを取得", command=self.start_data_retrieval); self.get_data_button.pack(side=tk.LEFT, ipady=10, ipadx=10, padx=15)
+        top_pane = ttk.Frame(self, padding=10); top_pane.pack(fill=tk.X)
+        account_frame = ttk.LabelFrame(top_pane, text="送信者アカウント"); account_frame.pack(side=tk.LEFT, padx=(0, 20), fill=tk.X, expand=True)
+        self.account_selector = ttk.Combobox(account_frame, textvariable=self.selected_account, values=sorted(list(self.accounts.keys())), state="readonly", width=30, font=("Yu Gothic UI", 11)); self.account_selector.pack(padx=10, pady=10, fill=tk.X)
+        self.get_data_button = ttk.Button(top_pane, text="1. Notionからデータを取得", command=self.start_data_retrieval); self.get_data_button.pack(side=tk.LEFT, ipady=5, ipadx=5, padx=10)
 
         # --- Middle Content Pane ---
-        middle_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL); middle_pane.pack(fill=tk.BOTH, expand=True, pady=20)
+        middle_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL); middle_pane.pack(fill=tk.BOTH, expand=True, pady=10)
         
-        supplier_pane = ttk.Frame(middle_pane, padding=10); middle_pane.add(supplier_pane, weight=1)
-        table_pane = ttk.Frame(middle_pane, padding=10); middle_pane.add(table_pane, weight=2)
+        supplier_pane = ttk.Frame(middle_pane, padding=5); middle_pane.add(supplier_pane, weight=1)
+        table_pane = ttk.Frame(middle_pane, padding=5); middle_pane.add(table_pane, weight=2)
 
         supplier_frame = ttk.LabelFrame(supplier_pane, text="2. 仕入先リスト"); supplier_frame.pack(fill=tk.BOTH, expand=True)
         self.supplier_listbox = tk.Listbox(supplier_frame, exportselection=False, bg="#FFFFFF", fg=self.TEXT_COLOR, selectbackground=self.HEADER_BG, selectforeground=self.BUTTON_FG, font=("Yu Gothic UI", 11))
@@ -243,24 +228,24 @@ class Application(ttk.Frame):
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set); vsb.pack(side=tk.RIGHT, fill=tk.Y); hsb.pack(side=tk.BOTTOM, fill=tk.X); self.tree.pack(fill=tk.BOTH, expand=True)
 
         # --- Bottom Action Pane ---
-        bottom_pane = ttk.Frame(self, padding="15 10"); bottom_pane.pack(fill=tk.X)
-        preview_frame = ttk.LabelFrame(bottom_pane, text="3. 内容を確認して送信"); preview_frame.pack(fill=tk.X, expand=True, side=tk.LEFT, padx=(0, 30))
+        bottom_pane = ttk.Frame(self, padding=10); bottom_pane.pack(fill=tk.X)
+        preview_frame = ttk.LabelFrame(bottom_pane, text="3. 内容を確認して送信"); preview_frame.pack(fill=tk.X, expand=True, side=tk.LEFT, padx=(0, 20))
         self.to_var, self.cc_var, self.contact_var, self.pdf_var = tk.StringVar(), tk.StringVar(), tk.StringVar(), tk.StringVar()
-        ttk.Label(preview_frame, text="宛先(To):").grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
-        ttk.Label(preview_frame, textvariable=self.to_var).grid(row=0, column=1, sticky=tk.W, padx=10)
-        ttk.Label(preview_frame, text="宛先(Cc):").grid(row=1, column=0, sticky=tk.W, padx=10, pady=5)
-        ttk.Label(preview_frame, textvariable=self.cc_var).grid(row=1, column=1, sticky=tk.W, padx=10)
-        ttk.Label(preview_frame, text="担当者:").grid(row=2, column=0, sticky=tk.W, padx=10, pady=5)
-        ttk.Label(preview_frame, textvariable=self.contact_var).grid(row=2, column=1, sticky=tk.W, padx=10)
-        ttk.Label(preview_frame, text="添付PDF:").grid(row=3, column=0, sticky=tk.W, padx=10, pady=5)
-        self.pdf_label = ttk.Label(preview_frame, textvariable=self.pdf_var, foreground="blue", cursor="hand2"); self.pdf_label.grid(row=3, column=1, sticky=tk.W, padx=10)
-        self.pdf_label.bind("<Button-1>", self.open_current_pdf)
+        ttk.Label(preview_frame, text="宛先(To):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(preview_frame, textvariable=self.to_var).grid(row=0, column=1, sticky=tk.W, padx=5)
+        ttk.Label(preview_frame, text="宛先(Cc):").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(preview_frame, textvariable=self.cc_var).grid(row=1, column=1, sticky=tk.W, padx=5)
+        ttk.Label(preview_frame, text="担当者:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(preview_frame, textvariable=self.contact_var).grid(row=2, column=1, sticky=tk.W, padx=5)
+        ttk.Label(preview_frame, text="添付PDF:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
+        self.pdf_label = ttk.Label(preview_frame, textvariable=self.pdf_var, foreground="blue", cursor="hand2"); self.pdf_label.grid(row=3, column=1, sticky=tk.W, padx=5)
+        self.pdf_label.bind("<Button-1>", lambda e: self.open_current_pdf())
 
         send_button_frame = ttk.Frame(bottom_pane); send_button_frame.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
-        self.send_mail_button = ttk.Button(send_button_frame, text="メール送信", command=self.send_single_mail, state="disabled"); self.send_mail_button.pack(expand=True, ipady=15, ipadx=15)
+        self.send_mail_button = ttk.Button(send_button_frame, text="メール送信", command=self.send_single_mail, state="disabled"); self.send_mail_button.pack(expand=True, ipady=10, ipadx=10)
 
         # --- Log Pane ---
-        log_frame = ttk.LabelFrame(self, text="ログ"); log_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(10,0))
+        log_frame = ttk.LabelFrame(self, text="ログ"); log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5,0))
         self.log_display = scrolledtext.ScrolledText(log_frame, height=5, wrap=tk.WORD, bg="#FFFFFF", fg=self.TEXT_COLOR, font=("Yu Gothic UI", 12)); self.log_display.pack(fill=tk.BOTH, expand=True); self.log_display.configure(state='disabled')
         self.log_display.tag_configure("emphasis", foreground=self.EMPHASIS_COLOR, font=("Yu Gothic UI", 12, "bold"))
 
@@ -277,7 +262,7 @@ class Application(ttk.Frame):
         if selected_supplier in self.sent_suppliers: self.clear_preview(); return
         self.processing = True; self.toggle_buttons(False)
         self.update_table_for_supplier(selected_supplier)
-        threading.Thread(target=self.run_thread, args=(self.pdf_creation_flow_task,)).start()
+        threading.Thread(target=self.run_thread, args=(self.create_pdf_task,)).start()
         self.master.after(100, self.check_queue)
 
     def send_single_mail(self):
@@ -289,46 +274,20 @@ class Application(ttk.Frame):
 
     def run_thread(self, task_func, *args):
         original_stdout = sys.stdout; sys.stdout = self.queue_io
-        try:
-            task_func(*args)
-        except Exception as e:
-            print(f"\nスレッド処理中にエラーが発生しました: {e}")
-            self.q.put(("task_complete", None))
-        finally:
-            sys.stdout = original_stdout
+        try: task_func(*args)
+        except Exception as e: print(f"\n予期せぬエラー: {e}")
+        finally: sys.stdout = original_stdout; self.q.put(("task_complete", None))
 
-    def get_data_task(self):
-        print("Notionからデータ取得中...")
-        data = get_order_data_from_notion()
-        self.q.put(("update_data_ui", data))
-
-    def pdf_creation_flow_task(self):
-        import pythoncom
-        pythoncom.CoInitialize()
-        try:
-            account_name = self.selected_account.get()
-            sender_creds = self.accounts[account_name]
-            sender_info = {"name": account_name, "email": sender_creds["sender"]}
-            selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
-            
-            print(f"「{selected_supplier}」のPDF作成準備中...")
-            
-            items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
-            
-            if not items:
-                print("エラー: PDF作成対象のアイテムが見つかりません。")
-                self.q.put(("task_complete", None))
-                return
-
-            sales_contact = items[0]["sales_contact"]
-            pdf_path = self._create_order_pdf_in_thread(selected_supplier, items, sales_contact, sender_info)
-
-            if pdf_path:
-                self.q.put(("update_preview_ui", (items[0], pdf_path)))
-            else:
-                self.q.put(("task_complete", None))
-        finally:
-            pythoncom.CoUninitialize()
+    def get_data_task(self): print("Notionからデータ取得中..."); data = get_order_data_from_notion(); self.q.put(("update_data_ui", data))
+    def create_pdf_task(self):
+        account_name = self.selected_account.get()
+        sender_creds = self.accounts[account_name]
+        sender_info = {"name": account_name, "email": sender_creds["sender"]}
+        selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
+        print(f"「{selected_supplier}」のPDFを作成中...")
+        items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
+        pdf_path = self.create_order_pdf(selected_supplier, items, items[0]["sales_contact"], sender_info)
+        self.q.put(("update_preview_ui", (items[0], pdf_path)))
 
     def send_mail_task(self):
         account_name = self.selected_account.get()
@@ -340,8 +299,6 @@ class Application(ttk.Frame):
         if success:
             page_ids_to_update = [item['page_id'] for item in items]
             self.q.put(("ask_and_update_notion", (selected_supplier, page_ids_to_update)))
-        else:
-            self.q.put(("task_complete", None))
 
     def check_queue(self):
         try:
@@ -349,23 +306,11 @@ class Application(ttk.Frame):
                 command, data = self.q.get_nowait()
                 if command == "log": self.log(data.strip())
                 elif command == "update_data_ui": self.update_data_ui(data)
+                elif command == "update_preview_ui": self.update_preview_ui(data)
                 elif command == "ask_and_update_notion": self.ask_and_update_notion(data[0], data[1])
                 elif command == "mark_as_sent_after_update": self.mark_as_sent(data)
-                elif command == "update_preview_ui": self.update_preview_ui(data)
-                elif command == "task_complete":
-                    self.processing = False
-                    self.toggle_buttons(True)
-        except queue.Empty: 
-            self.master.after(100, self.check_queue)
-        except Exception as e:
-            error_message = f"UI更新中に致命的なエラーが発生しました: {e}"
-            self.log(error_message, "emphasis")
-            print(error_message)
-            import traceback
-            traceback.print_exc()
-            self.processing = False
-            self.toggle_buttons(True)
-            self.master.after(100, self.check_queue)
+                elif command == "task_complete": self.processing = False; self.toggle_buttons(True)
+        except queue.Empty: self.master.after(100, self.check_queue)
 
     def log(self, message, tag=None):
         self.log_display.config(state="normal")
@@ -382,7 +327,6 @@ class Application(ttk.Frame):
         self.update_supplier_list(data)
         if not data: self.log("-> 発注対象のデータは見つかりませんでした。")
         else: self.log("-> データ取得完了。左のリストから仕入先を選択してください。", "emphasis")
-        self.q.put(("task_complete", None))
 
     def update_preview_ui(self, data):
         info, pdf_path = data
@@ -393,8 +337,6 @@ class Application(ttk.Frame):
         self.log("   宛先、担当者、PDFの内容を必ず確認してください。", "emphasis")
         self.log("   (PDFファイル名をクリックすると内容を開けます)", "emphasis")
         self.log("-> 問題がなければ「メール送信」ボタンを押してください。", "emphasis")
-        if pdf_path: self.send_mail_button.config(state="normal")
-        self.q.put(("task_complete", None))
 
     def ask_and_update_notion(self, supplier, page_ids):
         if messagebox.askyesno("Notion更新確認", f"メール送信が完了しました。\n\n「{supplier}」のNotionページの「発注日」を更新しますか？"):
@@ -417,7 +359,6 @@ class Application(ttk.Frame):
         self.clear_preview()
         status = "更新済み" if updated else "更新スキップ"
         self.log(f"-> 「{supplier}」は送信済みとしてマークされました。({status})")
-        self.q.put(("task_complete", None))
 
     def update_table_for_supplier(self, supplier_name):
         self.tree.delete(*self.tree.get_children())
@@ -430,26 +371,36 @@ class Application(ttk.Frame):
         suppliers = sorted(list(set(i["supplier_name"] for i in data)))
         for s in suppliers: self.supplier_listbox.insert(tk.END, s)
 
-    def clear_displays(self, event=None): 
+    def clear_displays(): 
         self.tree.delete(*self.tree.get_children()); self.supplier_listbox.delete(0, tk.END); self.sent_suppliers.clear(); self.clear_preview()
         self.log_display.config(state="normal"); self.log_display.delete(1.0, tk.END); self.log_display.config(state="disabled")
 
-    def clear_preview(self):
-        self.to_var.set(""); self.cc_var.set(""); self.contact_var.set(""); self.pdf_var.set(""); self.current_pdf_path = None; self.send_mail_button.config(state="disabled")
-
-    def toggle_buttons(self, enabled):
+    def clear_preview(self): self.to_var.set(""); self.cc_var.set(""); self.contact_var.set(""); self.pdf_var.set(""); self.current_pdf_path = None; self.send_mail_button.config(state="disabled")
+    def toggle_buttons(self, enabled): 
         state = "normal" if enabled else "disabled"
         self.get_data_button.config(state=state)
+        self.send_mail_button.config(state="disabled")
+        if enabled and self.current_pdf_path: self.send_mail_button.config(state="normal")
 
-    def open_current_pdf(self, event=None):
-        if self.current_pdf_path and os.path.exists(self.current_pdf_path):
-            os.startfile(self.current_pdf_path)
-        else:
-            messagebox.showwarning("ファイルなし", "PDFファイルが見つかりません。")
+    def open_current_pdf(self): 
+        if self.current_pdf_path and os.path.exists(self.current_pdf_path): os.startfile(self.current_pdf_path)
+        else: messagebox.showwarning("ファイルなし", "PDFファイルが見つかりません。")
 
     def on_closing(self):
         if self.processing: return messagebox.showwarning("処理中", "処理が実行中です。終了できません。")
+        self.close_excel_app()
         self.master.destroy()
+
+    def close_excel_app(self):
+        if self.excel_app:
+            try:
+                # Close all open workbooks without saving
+                for workbook in self.excel_app.Workbooks:
+                    workbook.Close(SaveChanges=False)
+                self.excel_app.Quit(SaveChanges=False)
+                self.excel_app = None
+            except Exception as e:
+                print(f"Excel終了エラー: {e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
