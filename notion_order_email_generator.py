@@ -276,7 +276,7 @@ class Application(ttk.Frame):
                 elif command == "update_data_ui": self.update_data_ui(data)
                 elif command == "update_preview_ui": self.update_preview_ui(data)
                 elif command == "ask_and_update_notion": self.ask_and_update_notion(data[0], data[1])
-                elif command == "mark_as_sent_after_update": self.mark_as_sent(data[0])
+                elif command == "mark_as_sent_after_update": self.mark_as_sent(data)
                 elif command == "task_complete": self.processing = False; self.toggle_buttons(True)
         except queue.Empty: self.master.after(100, self.check_queue)
 
@@ -348,5 +348,6 @@ class Application(ttk.Frame):
 
 if __name__ == "__main__":
     root = tk.Tk()
+    root.state('zoomed')
     app = Application(master=root)
     app.mainloop()
