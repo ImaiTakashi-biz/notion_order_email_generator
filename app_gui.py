@@ -1,203 +1,113 @@
 import os
-import re
 import sys
-import time
 import queue
 import threading
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
-
-from datetime import datetime
-from pathlib import Path
 import tkinter as tk
-from tkinter import scrolledtext, messagebox, ttk
+from tkinter import scrolledtext, messagebox, ttk, filedialog
 
-import openpyxl
-import win32com.client # PDF作成時のExcel操作にのみ使用
-from dotenv import load_dotenv, dotenv_values
-from notion_client import Client
-
-# .envファイルから環境変数を読み込む
-load_dotenv()
-
-# --- 定数 ---
-NOTION_API_TOKEN = os.getenv("NOTION_API_TOKEN")
-PAGE_ID_CONTAINING_DB = os.getenv("NOTION_DATABASE_ID")
-EXCEL_TEMPLATE_PATH = r"C:\Users\SEIZOU-20\Desktop\注文書.xlsx"
-PDF_SAVE_DIR = os.path.join(Path.home(), "Desktop", "注文書")
-
-# SMTPサーバー情報 (アカウント情報はアプリ内で動的に読み込み)
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.office365.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-
+# 作成したモジュールをインポート
+import config
+import notion_api
+import email_service
+import pdf_generator
 
 class QueueIO:
-    def __init__(self, q): self.q = q
-    def write(self, text): self.q.put(("log", text))
-    def flush(self): pass
+    def __init__(self, q):
+        self.q = q
+    def write(self, text):
+        self.q.put(("log", text))
+    def flush(self):
+        pass
 
-def get_order_data_from_notion():
-    if not NOTION_API_TOKEN or not PAGE_ID_CONTAINING_DB: return None
-    notion = Client(auth=NOTION_API_TOKEN)
-    order_list = []
-    try:
-        print(f"DBコンテナ ({PAGE_ID_CONTAINING_DB}) を検索中...")
-        children = notion.blocks.children.list(block_id=PAGE_ID_CONTAINING_DB)
-        real_database_id = next((b.get("id") for b in children.get("results", []) if b.get("type") == "child_database"), None)
-        if not real_database_id: print(f"エラー: DBが見つかりません。"); return []
-        print(f"DB発見: {real_database_id}")
+class SettingsWindow(tk.Toplevel):
+    """設定ウィンドウ"""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.transient(parent)
+        self.grab_set()
+        self.title("設定")
+        self.geometry("600x200")
+
+        self.excel_path = tk.StringVar(value=config.EXCEL_TEMPLATE_PATH)
+        self.pdf_dir = tk.StringVar(value=config.PDF_SAVE_DIR)
+
+        body = ttk.Frame(self, padding="10 10 10 10")
+        body.pack(fill="both", expand=True)
+
+        # Excel Path
+        ttk.Label(body, text="Excelテンプレートのパス:").grid(row=0, column=0, sticky="w", pady=5)
+        excel_entry = ttk.Entry(body, textvariable=self.excel_path, width=60)
+        excel_entry.grid(row=1, column=0, sticky="ew", padx=(0, 5))
+        excel_button = ttk.Button(body, text="参照...", command=self.select_excel_file)
+        excel_button.grid(row=1, column=1, sticky="w")
+
+        # PDF Directory
+        ttk.Label(body, text="PDF保存先フォルダ:").grid(row=2, column=0, sticky="w", pady=5)
+        pdf_entry = ttk.Entry(body, textvariable=self.pdf_dir, width=60)
+        pdf_entry.grid(row=3, column=0, sticky="ew", padx=(0, 5))
+        pdf_button = ttk.Button(body, text="参照...", command=self.select_pdf_dir)
+        pdf_button.grid(row=3, column=1, sticky="w")
         
-        all_results = []
-        next_cursor = None
-        while True:
-            query_res = notion.databases.query(database_id=real_database_id, start_cursor=next_cursor)
-            all_results.extend(query_res.get("results", []))
-            if not query_res.get("has_more"): break
-            next_cursor = query_res.get("next_cursor")
+        body.grid_columnconfigure(0, weight=1)
 
-        print(f"全 {len(all_results)} 件のデータをフィルタリング中...")
-        for page in all_results:
-            props = page.get("properties", {})
-            if "要発注" not in props.get("注文ステータス", {}).get("formula", {}).get("string", ""): continue
-            
-            supplier_relation = props.get("DB_仕入先マスター", {}).get("relation", [])
-            if not supplier_relation: continue
-            supplier_page_id = supplier_relation[0].get("id")
+        # Buttons
+        button_frame = ttk.Frame(self, padding="10 10 10 10")
+        button_frame.pack(fill="x")
+        
+        save_button = ttk.Button(button_frame, text="保存", command=self.save_settings)
+        save_button.pack(side="right", padx=5)
+        
+        cancel_button = ttk.Button(button_frame, text="キャンセル", command=self.destroy)
+        cancel_button.pack(side="right")
 
-            try:
-                time.sleep(0.35)
-                supplier_page = notion.pages.retrieve(page_id=supplier_page_id)
-                supplier_props = supplier_page.get("properties", {})
-                order_list.append({
-                    "page_id": page["id"],
-                    "maker_name": props.get("メーカー名", {}).get("rich_text", [{}])[0].get("plain_text", ""),
-                    "db_part_number": props.get("DB品番", {}).get("rich_text", [{}])[0].get("plain_text", ""),
-                    "quantity": props.get("数量", {}).get("number", 0),
-                    "supplier_name": supplier_props.get("購入先", {}).get("title", [{}])[0].get("plain_text", ""),
-                    "sales_contact": supplier_props.get("営業担当", {}).get("rich_text", [{}])[0].get("plain_text", ""),
-                    "email": supplier_props.get("メール", {}).get("email", ""),
-                    "email_cc": supplier_props.get("メール CC:", {}).get("email", ""),
-                })
-            except Exception as e: print(f"仕入先情報取得エラー (Page ID: {supplier_page_id}): {e}")
-        print(f"-> フィルタリング完了。{len(order_list)} 件の要発注データが見つかりました。")
-    except Exception as e: print(f"Notion DB処理エラー: {e}")
-    return order_list
+    def select_excel_file(self):
+        path = filedialog.askopenfilename(
+            title="Excelテンプレートを選択",
+            filetypes=[("Excel ファイル", "*.xlsx")]
+        )
+        if path:
+            self.excel_path.set(path)
 
+    def select_pdf_dir(self):
+        path = filedialog.askdirectory(title="PDF保存先フォルダを選択")
+        if path:
+            self.pdf_dir.set(path)
 
-def send_smtp_mail(info, pdf_path, sender_creds):
-    try:
-        msg = MIMEMultipart()
-        msg["From"] = sender_creds["sender"]
-        msg["To"] = info["email"]
-        if info["email_cc"]: msg["Cc"] = info["email_cc"]
-        msg["Subject"] = "注文書送付の件"
-
-        body = f'''{info["supplier_name"]}\n{info.get('sales_contact', 'ご担当者')} 様\n\nいつも大変お世話になります。\n添付の通り注文宜しくお願い致します。\n\n∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝\n株式会社　新井精密\n製造課　発注担当\n〒368-0061\n埼玉県秩父市小柱670番地\nTEL: 0494-26-7786\nFAX: 0494-26-7787\n∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝'''
-        msg.attach(MIMEText(body, 'plain'))
-
-        with open(pdf_path, "rb") as f:
-            part = MIMEApplication(f.read(), Name=os.path.basename(pdf_path))
-        part['Content-Disposition'] = f'attachment; filename="{os.path.basename(pdf_path)}"'
-        msg.attach(part)
-
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(sender_creds["sender"], sender_creds["password"])
-            recipients = [info["email"]] + ([info["email_cc"]] if info["email_cc"] else [])
-            server.sendmail(sender_creds["sender"], recipients, msg.as_string())
-        print(f"-> メール送信完了 (From: {sender_creds['sender']})")
-        return True
-    except Exception as e: print(f"メール送信エラー: {e}"); return False
-
-def update_notion_pages(page_ids):
-    print(f"{len(page_ids)}件の「発注日」を更新中...")
-    notion = Client(auth=NOTION_API_TOKEN)
-    today = datetime.now().strftime("%Y-%m-%d")
-    for i, page_id in enumerate(page_ids):
-        try:
-            notion.pages.update(page_id=page_id, properties={"発注日": {"date": {"start": today}}})
-            print(f"({i+1}/{len(page_ids)}) {page_id} 更新完了")
-            time.sleep(0.35)
-        except Exception as e: print(f"エラー: {page_id} 更新失敗. {e}")
-    print("Notion更新完了")
+    def save_settings(self):
+        new_config = {
+            "EXCEL_TEMPLATE_PATH": self.excel_path.get(),
+            "PDF_SAVE_DIR": self.pdf_dir.get()
+        }
+        config.save_json_config(new_config)
+        config.reload_config()
+        messagebox.showinfo("保存完了", "設定を保存しました。", parent=self)
+        self.destroy()
 
 class Application(ttk.Frame):
     def __init__(self, master=None):
         super().__init__(master)
         self.master = master
-        self.master.title("Notion注文書メール作成アプリ")
-        self.q = queue.Queue(); self.queue_io = QueueIO(self.q)
-        self.processing = False; self.order_data = []; self.current_pdf_path = None; self.sent_suppliers = set()
-        self.accounts = {}; self.selected_account = tk.StringVar()
-        self.load_accounts_from_env()
-        self.configure_styles()
-        self.create_widgets()
-        self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.q = queue.Queue()
+        self.queue_io = QueueIO(self.q)
+        self.processing = False
+        self.order_data = []
+        self.current_pdf_path = None
+        self.sent_suppliers = set()
+        
+        self.selected_account = tk.StringVar()
+        self.sender_email_var = tk.StringVar()
 
-    def _create_order_pdf_in_thread(self, supplier_name, items, sales_contact, sender_info):
-        excel = None
-        workbook = None
-        temp_excel_path = None
-        try:
-            excel = win32com.client.Dispatch("Excel.Application")
-            excel.Visible = False
-            excel.DisplayAlerts = False
-
-            wb = openpyxl.load_workbook(EXCEL_TEMPLATE_PATH)
-            ws = wb.active
-            ws["A5"] = f"{supplier_name} 御中"; ws["A7"] = f"{sales_contact} 様"
-            ws["D8"] = f"担当：{sender_info['name']}"
-            ws["D14"] = sender_info["email"]
-
-            for i, item in enumerate(items): ws[f"A{16+i}"], ws[f"B{16+i}"], ws[f"C{16+i}"] = item["db_part_number"], item["maker_name"], item["quantity"]
-            
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            safe_supplier_name = re.sub(r'[\\/:*?"<>|]', '_', supplier_name)
-            pdf_filename = f"{timestamp}_{safe_supplier_name}_注文書.pdf"
-            if not os.path.exists(PDF_SAVE_DIR): os.makedirs(PDF_SAVE_DIR)
-            pdf_path = os.path.join(PDF_SAVE_DIR, pdf_filename)
-            temp_excel_path = os.path.join(PDF_SAVE_DIR, f"temp_{timestamp}.xlsx")
-            
-            wb.save(temp_excel_path)
-            wb.close()
-
-            workbook = excel.Workbooks.Open(temp_excel_path)
-            workbook.ActiveSheet.ExportAsFixedFormat(0, pdf_path)
-            
-            print(f"-> PDF作成完了: {pdf_filename}")
-            return pdf_path
-        except Exception as e:
-            print(f"PDF作成エラー ({supplier_name}): {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-        finally:
-            if workbook:
-                workbook.Close(SaveChanges=False)
-            if excel:
-                excel.Quit()
-            if temp_excel_path and os.path.exists(temp_excel_path):
-                try:
-                    os.remove(temp_excel_path)
-                except Exception as e:
-                    print(f"一時ファイルの削除に失敗: {e}")
-
-    def load_accounts_from_env(self):
-        config = dotenv_values()
-        sender_prefix = "EMAIL_SENDER_"
-        sender_keys = [key for key in config if key.startswith(sender_prefix)]
-        for key in sender_keys:
-            account_name = key[len(sender_prefix):]
-            password_key = f"EMAIL_PASSWORD_{account_name}"
-            sender_email = config.get(key)
-            password = config.get(password_key)
-            if sender_email and password:
-                self.accounts[account_name] = {"sender": sender_email, "password": password}
+        self.accounts = config.load_email_accounts()
         if self.accounts:
             account_names = list(self.accounts.keys())
             self.selected_account.set(account_names[0])
+        
+        self.selected_account.trace_add("write", self.update_sender_label)
+
+        self.configure_styles()
+        self.create_widgets()
+        self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.update_sender_label() # 初期表示
 
     def configure_styles(self):
         style = ttk.Style(self.master); style.theme_use("clam")
@@ -220,9 +130,24 @@ class Application(ttk.Frame):
 
         # --- Top Action Pane ---
         top_pane = ttk.Frame(self, padding="15 10"); top_pane.pack(fill=tk.X)
-        account_frame = ttk.LabelFrame(top_pane, text="送信者アカウント"); account_frame.pack(side=tk.LEFT, padx=(0, 30), fill=tk.X, expand=True)
-        self.account_selector = ttk.Combobox(account_frame, textvariable=self.selected_account, values=sorted(list(self.accounts.keys())), state="readonly", width=30, font=("Yu Gothic UI", 11)); self.account_selector.pack(padx=15, pady=10, fill=tk.X)
-        self.get_data_button = ttk.Button(top_pane, text="1. Notionからデータを取得", command=self.start_data_retrieval); self.get_data_button.pack(side=tk.LEFT, ipady=10, ipadx=10, padx=15)
+        
+        account_frame = ttk.LabelFrame(top_pane, text="送信者アカウント")
+        account_frame.pack(side=tk.LEFT, padx=(0, 15), fill=tk.X, expand=True)
+        
+        self.account_selector = ttk.Combobox(account_frame, textvariable=self.selected_account, values=sorted(list(self.accounts.keys())), state="readonly", width=30, font=("Yu Gothic UI", 11))
+        self.account_selector.pack(padx=15, pady=(10,0), fill=tk.X)
+        
+        sender_label_frame = ttk.Frame(account_frame)
+        sender_label_frame.pack(fill=tk.X, padx=15, pady=(5,10))
+        ttk.Label(sender_label_frame, text="送信元:").pack(side=tk.LEFT)
+        ttk.Label(sender_label_frame, textvariable=self.sender_email_var, font=("Yu Gothic UI", 10, "bold")).pack(side=tk.LEFT, padx=5)
+
+        action_button_frame = ttk.Frame(top_pane)
+        action_button_frame.pack(side=tk.LEFT)
+        self.get_data_button = ttk.Button(action_button_frame, text="1. Notionからデータを取得", command=self.start_data_retrieval)
+        self.get_data_button.pack(side=tk.TOP, ipady=5, ipadx=10)
+        self.settings_button = ttk.Button(action_button_frame, text="設定", command=self.open_settings_window)
+        self.settings_button.pack(side=tk.TOP, fill=tk.X, pady=(5,0))
 
         # --- Middle Content Pane ---
         middle_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL); middle_pane.pack(fill=tk.BOTH, expand=True, pady=20)
@@ -264,9 +189,33 @@ class Application(ttk.Frame):
         self.log_display = scrolledtext.ScrolledText(log_frame, height=5, wrap=tk.WORD, bg="#FFFFFF", fg=self.TEXT_COLOR, font=("Yu Gothic UI", 12)); self.log_display.pack(fill=tk.BOTH, expand=True); self.log_display.configure(state='disabled')
         self.log_display.tag_configure("emphasis", foreground=self.EMPHASIS_COLOR, font=("Yu Gothic UI", 12, "bold"))
 
+    def open_settings_window(self):
+        SettingsWindow(self.master)
+
+    def update_sender_label(self, *args):
+        account_name = self.selected_account.get()
+        if account_name in self.accounts:
+            self.sender_email_var.set(self.accounts[account_name]["sender"])
+        else:
+            self.sender_email_var.set("")
+
     def start_data_retrieval(self):
         if self.processing: return
-        if not all([NOTION_API_TOKEN, self.accounts]): return messagebox.showerror("設定エラー", ".envファイルにNotionとEmailアカウント(EMAIL_SENDER_xx)の設定が必要です。")
+        
+        # .envのチェック
+        env_missing = []
+        if not config.NOTION_API_TOKEN: env_missing.append("・Notion APIトークン (NOTION_API_TOKEN)")
+        if not config.PAGE_ID_CONTAINING_DB: env_missing.append("・Notion データベースID (NOTION_DATABASE_ID)")
+        if not self.accounts: env_missing.append("・Emailアカウント (EMAIL_SENDER_xx)")
+        if env_missing:
+            messagebox.showerror("設定エラー (.env)", ".envファイルに以下の設定が必要です。\n\n" + "\n".join(env_missing))
+            return
+
+        # config.jsonのチェック
+        if not config.EXCEL_TEMPLATE_PATH or not os.path.exists(config.EXCEL_TEMPLATE_PATH):
+            messagebox.showerror("設定エラー (Excel)", f"Excelテンプレートが見つかりません。\n「設定」からパスを確認してください。\n\n現在のパス: {config.EXCEL_TEMPLATE_PATH}")
+            return
+
         self.processing = True; self.toggle_buttons(False); self.clear_displays()
         threading.Thread(target=self.run_thread, args=(self.get_data_task,)).start()
         self.master.after(100, self.check_queue)
@@ -299,7 +248,7 @@ class Application(ttk.Frame):
 
     def get_data_task(self):
         print("Notionからデータ取得中...")
-        data = get_order_data_from_notion()
+        data = notion_api.get_order_data_from_notion()
         self.q.put(("update_data_ui", data))
 
     def pdf_creation_flow_task(self):
@@ -312,16 +261,11 @@ class Application(ttk.Frame):
             selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
             
             print(f"「{selected_supplier}」のPDF作成準備中...")
-            
             items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
-            
-            if not items:
-                print("エラー: PDF作成対象のアイテムが見つかりません。")
-                self.q.put(("task_complete", None))
-                return
+            if not items: return self.q.put(("task_complete", None))
 
             sales_contact = items[0]["sales_contact"]
-            pdf_path = self._create_order_pdf_in_thread(selected_supplier, items, sales_contact, sender_info)
+            pdf_path = pdf_generator.create_order_pdf(selected_supplier, items, sales_contact, sender_info)
 
             if pdf_path:
                 self.q.put(("update_preview_ui", (items[0], pdf_path)))
@@ -336,7 +280,7 @@ class Application(ttk.Frame):
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
         print(f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})...")
         items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
-        success = send_smtp_mail(items[0], self.current_pdf_path, sender_creds)
+        success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds)
         if success:
             page_ids_to_update = [item['page_id'] for item in items]
             self.q.put(("ask_and_update_notion", (selected_supplier, page_ids_to_update)))
@@ -404,7 +348,7 @@ class Application(ttk.Frame):
         else: self.mark_as_sent(supplier, updated=False)
 
     def update_notion_task(self, page_ids):
-        update_notion_pages(page_ids)
+        notion_api.update_notion_pages(page_ids)
         supplier = next((item["supplier_name"] for item in self.order_data if item["page_id"] == page_ids[0]), None)
         if supplier: self.q.put(("mark_as_sent_after_update", supplier))
 
@@ -440,6 +384,7 @@ class Application(ttk.Frame):
     def toggle_buttons(self, enabled):
         state = "normal" if enabled else "disabled"
         self.get_data_button.config(state=state)
+        self.settings_button.config(state=state)
 
     def open_current_pdf(self, event=None):
         if self.current_pdf_path and os.path.exists(self.current_pdf_path):
@@ -450,9 +395,3 @@ class Application(ttk.Frame):
     def on_closing(self):
         if self.processing: return messagebox.showwarning("処理中", "処理が実行中です。終了できません。")
         self.master.destroy()
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    root.state('zoomed')
-    app = Application(master=root)
-    app.mainloop()
