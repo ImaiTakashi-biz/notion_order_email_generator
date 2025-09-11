@@ -168,10 +168,10 @@ class Application(ttk.Frame):
         # --- 4. ログ ---
         log_frame = ttk.LabelFrame(main_container, text="ログ")
         log_frame.grid(row=3, column=0, sticky="nsew")
-        self.log_display = scrolledtext.ScrolledText(log_frame, height=10, wrap=tk.WORD, bg=self.LIGHT_BG, fg=self.TEXT_COLOR, font=("Consolas", 10), relief="flat", borderwidth=0, highlightthickness=0)
+        self.log_display = scrolledtext.ScrolledText(log_frame, height=10, wrap=tk.WORD, bg=self.LIGHT_BG, fg=self.TEXT_COLOR, font=("Consolas", 11), relief="flat", borderwidth=0, highlightthickness=0)
         self.log_display.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
         self.log_display.configure(state='disabled')
-        self.log_display.tag_configure("emphasis", foreground=self.EMPHASIS_COLOR, font=("Yu Gothic UI", 9, "bold"))
+        self.log_display.tag_configure("emphasis", foreground=self.EMPHASIS_COLOR, font=("Yu Gothic UI", 12, "bold"))
 
     def update_sender_label(self, *args):
         account_name = self.selected_account.get()
@@ -241,7 +241,7 @@ class Application(ttk.Frame):
             sender_info = {"name": account_name, "email": sender_creds["sender"]}
             selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
             
-            print(f"「{selected_supplier}」のPDF作成準備中...")
+            print(f"「{selected_supplier}」の注文書PDF作成準備中...")
             items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
             if not items: return self.q.put(("task_complete", None))
 
@@ -310,6 +310,7 @@ class Application(ttk.Frame):
         else:
             self.log("-> データ取得完了。左のリストから仕入先を選択してください。", "emphasis")
             self.log("   仕入先を選択すると、自動的に注文書PDFが作成され、プレビューが表示されます。")
+            self.log("")
         self.q.put(("task_complete", None))
 
     def update_preview_ui(self, data):
@@ -318,8 +319,10 @@ class Application(ttk.Frame):
         self.to_var.set(info.get("email", "")); self.cc_var.set(info.get("email_cc", "")); self.contact_var.set(info.get("sales_contact", ""))
         self.pdf_var.set(os.path.basename(pdf_path) if pdf_path else "作成失敗")
         self.log("-> プレビューの準備ができました。")
+        self.log("")
         self.log("   宛先、担当者、PDFの内容を必ず確認してください。", "emphasis")
         self.log("   (PDFファイル名をクリックすると内容を開けます)", "emphasis")
+        self.log("")
         self.log("-> 問題がなければ「メール送信」ボタンを押してください。", "emphasis")
         if pdf_path: self.send_mail_button.config(state="normal")
         self.q.put(("task_complete", None))
