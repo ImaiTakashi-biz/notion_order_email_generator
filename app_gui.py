@@ -3,7 +3,7 @@ import sys
 import queue
 import threading
 import tkinter as tk
-from tkinter import scrolledtext, messagebox, ttk, filedialog
+from tkinter import scrolledtext, messagebox, ttk
 
 # 作成したモジュールをインポート
 import config
@@ -18,70 +18,6 @@ class QueueIO:
         self.q.put(("log", text))
     def flush(self):
         pass
-
-class SettingsWindow(tk.Toplevel):
-    """設定ウィンドウ"""
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.transient(parent)
-        self.grab_set()
-        self.title("設定")
-        self.geometry("600x200")
-
-        self.excel_path = tk.StringVar(value=config.EXCEL_TEMPLATE_PATH)
-        self.pdf_dir = tk.StringVar(value=config.PDF_SAVE_DIR)
-
-        body = ttk.Frame(self, padding="10 10 10 10")
-        body.pack(fill="both", expand=True)
-
-        # Excel Path
-        ttk.Label(body, text="Excelテンプレートのパス:").grid(row=0, column=0, sticky="w", pady=5)
-        excel_entry = ttk.Entry(body, textvariable=self.excel_path, width=60)
-        excel_entry.grid(row=1, column=0, sticky="ew", padx=(0, 5))
-        excel_button = ttk.Button(body, text="参照...", command=self.select_excel_file)
-        excel_button.grid(row=1, column=1, sticky="w")
-
-        # PDF Directory
-        ttk.Label(body, text="PDF保存先フォルダ:").grid(row=2, column=0, sticky="w", pady=5)
-        pdf_entry = ttk.Entry(body, textvariable=self.pdf_dir, width=60)
-        pdf_entry.grid(row=3, column=0, sticky="ew", padx=(0, 5))
-        pdf_button = ttk.Button(body, text="参照...", command=self.select_pdf_dir)
-        pdf_button.grid(row=3, column=1, sticky="w")
-        
-        body.grid_columnconfigure(0, weight=1)
-
-        # Buttons
-        button_frame = ttk.Frame(self, padding="10 10 10 10")
-        button_frame.pack(fill="x")
-        
-        save_button = ttk.Button(button_frame, text="保存", command=self.save_settings)
-        save_button.pack(side="right", padx=5)
-        
-        cancel_button = ttk.Button(button_frame, text="キャンセル", command=self.destroy)
-        cancel_button.pack(side="right")
-
-    def select_excel_file(self):
-        path = filedialog.askopenfilename(
-            title="Excelテンプレートを選択",
-            filetypes=[("Excel ファイル", "*.xlsx")]
-        )
-        if path:
-            self.excel_path.set(path)
-
-    def select_pdf_dir(self):
-        path = filedialog.askdirectory(title="PDF保存先フォルダを選択")
-        if path:
-            self.pdf_dir.set(path)
-
-    def save_settings(self):
-        new_config = {
-            "EXCEL_TEMPLATE_PATH": self.excel_path.get(),
-            "PDF_SAVE_DIR": self.pdf_dir.get()
-        }
-        config.save_json_config(new_config)
-        config.reload_config()
-        messagebox.showinfo("保存完了", "設定を保存しました。", parent=self)
-        self.destroy()
 
 class Application(ttk.Frame):
     def __init__(self, master=None):
@@ -146,8 +82,6 @@ class Application(ttk.Frame):
         action_button_frame.pack(side=tk.LEFT)
         self.get_data_button = ttk.Button(action_button_frame, text="1. Notionからデータを取得", command=self.start_data_retrieval)
         self.get_data_button.pack(side=tk.TOP, ipady=5, ipadx=10)
-        self.settings_button = ttk.Button(action_button_frame, text="設定", command=self.open_settings_window)
-        self.settings_button.pack(side=tk.TOP, fill=tk.X, pady=(5,0))
 
         # --- Middle Content Pane ---
         middle_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL); middle_pane.pack(fill=tk.BOTH, expand=True, pady=20)
@@ -186,11 +120,8 @@ class Application(ttk.Frame):
 
         # --- Log Pane ---
         log_frame = ttk.LabelFrame(self, text="ログ"); log_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(10,0))
-        self.log_display = scrolledtext.ScrolledText(log_frame, height=5, wrap=tk.WORD, bg="#FFFFFF", fg=self.TEXT_COLOR, font=("Yu Gothic UI", 12)); self.log_display.pack(fill=tk.BOTH, expand=True); self.log_display.configure(state='disabled')
+        self.log_display = scrolledtext.ScrolledText(log_frame, height=10, wrap=tk.WORD, bg="#FFFFFF", fg=self.TEXT_COLOR, font=("Yu Gothic UI", 12)); self.log_display.pack(fill=tk.BOTH, expand=True); self.log_display.configure(state='disabled')
         self.log_display.tag_configure("emphasis", foreground=self.EMPHASIS_COLOR, font=("Yu Gothic UI", 12, "bold"))
-
-    def open_settings_window(self):
-        SettingsWindow(self.master)
 
     def update_sender_label(self, *args):
         account_name = self.selected_account.get()
@@ -207,13 +138,15 @@ class Application(ttk.Frame):
         if not config.NOTION_API_TOKEN: env_missing.append("・Notion APIトークン (NOTION_API_TOKEN)")
         if not config.PAGE_ID_CONTAINING_DB: env_missing.append("・Notion データベースID (NOTION_DATABASE_ID)")
         if not self.accounts: env_missing.append("・Emailアカウント (EMAIL_SENDER_xx)")
+        if not config.EXCEL_TEMPLATE_PATH: env_missing.append("・Excelテンプレートのパス (EXCEL_TEMPLATE_PATH)")
+        if not config.PDF_SAVE_DIR: env_missing.append("・PDF保存先フォルダ (PDF_SAVE_DIR)")
         if env_missing:
             messagebox.showerror("設定エラー (.env)", ".envファイルに以下の設定が必要です。\n\n" + "\n".join(env_missing))
             return
 
-        # config.jsonのチェック
-        if not config.EXCEL_TEMPLATE_PATH or not os.path.exists(config.EXCEL_TEMPLATE_PATH):
-            messagebox.showerror("設定エラー (Excel)", f"Excelテンプレートが見つかりません。\n「設定」からパスを確認してください。\n\n現在のパス: {config.EXCEL_TEMPLATE_PATH}")
+        # Excelテンプレートの存在チェック
+        if not os.path.exists(config.EXCEL_TEMPLATE_PATH):
+            messagebox.showerror("設定エラー (Excel)", f"Excelテンプレートが見つかりません。\n.envファイルでパスを確認してください。\n\n現在のパス: {config.EXCEL_TEMPLATE_PATH}")
             return
 
         self.processing = True; self.toggle_buttons(False); self.clear_displays()
@@ -384,7 +317,6 @@ class Application(ttk.Frame):
     def toggle_buttons(self, enabled):
         state = "normal" if enabled else "disabled"
         self.get_data_button.config(state=state)
-        self.settings_button.config(state=state)
 
     def open_current_pdf(self, event=None):
         if self.current_pdf_path and os.path.exists(self.current_pdf_path):
