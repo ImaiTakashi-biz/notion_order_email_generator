@@ -2,6 +2,7 @@ import time
 from datetime import datetime
 from notion_client import Client
 import config
+import concurrent.futures
 
 def get_order_data_from_notion():
     """Notionから「要発注」ステータスの注文データを取得する"""
@@ -31,6 +32,8 @@ def get_order_data_from_notion():
             next_cursor = query_res.get("next_cursor")
 
         print(f"全 {len(all_results)} 件のデータをフィルタリング中...")
+        
+        pages_to_process = []
         for page in all_results:
             props = page.get("properties", {})
             # "要発注" ステータスをチェック
@@ -41,33 +44,56 @@ def get_order_data_from_notion():
             supplier_relation = props.get("DB_仕入先マスター", {}).get("relation", [])
             if not supplier_relation:
                 continue
-            supplier_page_id = supplier_relation[0].get("id")
+            
+            pages_to_process.append(page)
 
-            try:
-                # APIレート制限を考慮
-                time.sleep(0.35)
-                supplier_page = notion.pages.retrieve(page_id=supplier_page_id)
-                supplier_props = supplier_page.get("properties", {})
-                
-                # 必要なプロパティを安全に取得
-                order_list.append({
-                    "page_id": page["id"],
-                    "maker_name": props.get("メーカー名", {}).get("rich_text", [{}])[0].get("plain_text", ""),
-                    "db_part_number": props.get("DB品番", {}).get("rich_text", [{}])[0].get("plain_text", ""),
-                    "quantity": props.get("数量", {}).get("number", 0),
-                    "supplier_name": supplier_props.get("購入先", {}).get("title", [{}])[0].get("plain_text", ""),
-                    "sales_contact": supplier_props.get("営業担当", {}).get("rich_text", [{}])[0].get("plain_text", ""),
-                    "email": supplier_props.get("メール", {}).get("email", ""),
-                    "email_cc": supplier_props.get("メール CC:", {}).get("email", ""),
-                })
-            except Exception as e:
-                print(f"仕入先情報の取得中にエラーが発生しました (Page ID: {supplier_page_id}): {e}")
-                
+        order_list = []
+        processed_count = 0
+        total_to_process = len(pages_to_process)
+
+        # Notion APIのレート制限を考慮し、最大ワーカー数を設定
+        # 1秒あたり3リクエストが目安なので、少し余裕を持たせて調整
+        MAX_WORKERS = 3 # 同時に実行するスレッド数
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            future_to_page = {executor.submit(process_notion_page, page, notion): page for page in pages_to_process}
+            for future in concurrent.futures.as_completed(future_to_page):
+                page = future_to_page[future]
+                try:
+                    result = future.result()
+                    if result:
+                        order_list.append(result)
+                except Exception as exc:
+                    print(f"ページ {page.get('id')} の処理中にエラーが発生しました: {exc}")
+                finally:
+                    processed_count += 1
+                    print(f"Notionデータ処理中... ({processed_count}/{total_to_process} 件完了)") # 詳細な進捗表示
+
         print(f"-> フィルタリング完了。{len(order_list)} 件の要発注データが見つかりました。")
     except Exception as e:
         print(f"Notionデータベースの処理中にエラーが発生しました: {e}")
         
     return order_list
+
+def process_notion_page(page, notion_client):
+    """Notionページを処理し、必要な情報を抽出するヘルパー関数"""
+    props = page.get("properties", {})
+    supplier_relation = props.get("DB_仕入先マスター", {}).get("relation", [])
+    supplier_page_id = supplier_relation[0].get("id")
+
+    supplier_page = notion_client.pages.retrieve(page_id=supplier_page_id)
+    supplier_props = supplier_page.get("properties", {})
+    
+    return {
+        "page_id": page["id"],
+        "maker_name": props.get("メーカー名", {}).get("rich_text", [{}])[0].get("plain_text", ""),
+        "db_part_number": props.get("DB品番", {}).get("rich_text", [{}])[0].get("plain_text", ""),
+        "quantity": props.get("数量", {}).get("number", 0),
+        "supplier_name": supplier_props.get("購入先", {}).get("title", [{}])[0].get("plain_text", ""),
+        "sales_contact": supplier_props.get("営業担当", {}).get("rich_text", [{}])[0].get("plain_text", ""),
+        "email": supplier_props.get("メール", {}).get("email", ""),
+        "email_cc": supplier_props.get("メール CC:", {}).get("email", ""),
+    }
 
 def update_notion_pages(page_ids):
     """指定されたNotionページのリストの「発注日」を今日の日付に更新する"""

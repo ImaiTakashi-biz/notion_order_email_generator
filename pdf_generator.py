@@ -23,6 +23,7 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info):
         return None
 
     try:
+        print(f"PDFを生成中... (仕入先名: {supplier_name})")
         excel = win32com.client.Dispatch("Excel.Application")
         excel.Visible = False
         excel.DisplayAlerts = False

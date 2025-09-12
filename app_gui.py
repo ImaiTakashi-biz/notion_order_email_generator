@@ -349,8 +349,9 @@ class Application(ttk.Frame):
         if not data:
             self.log("-> 発注対象のデータは見つかりませんでした。")
         else:
-            self.log("-> データ取得完了。左のリストから仕入先を選択してください。", "emphasis")
-            self.log("   仕入先を選択すると、自動的に注文書PDFが作成され、プレビューが表示されます。")
+            self.log("-> データ取得完了！", "emphasis")
+            self.log("   「仕入先を選択」リストから、メールを送信したい仕入先をクリックしてください。", "emphasis")
+            self.log("   選択すると、自動的に注文書PDFが作成され、プレビューが表示されます。")
             self.log("")
         self.q.put(("task_complete", None))
 
@@ -364,7 +365,7 @@ class Application(ttk.Frame):
         self.log("   宛先、担当者、PDFの内容を必ず確認してください。", "emphasis")
         self.log("   (PDFファイル名をクリックすると内容を開けます)", "emphasis")
         self.log("")
-        self.log("-> 問題がなければ「メール送信」ボタンを押してください。", "emphasis")
+        self.log("-> 内容を確認し、問題がなければ「メール送信」ボタンをクリックしてください！", "emphasis")
         if pdf_path: self.send_mail_button.config(state="normal")
         self.q.put(("task_complete", None))
 
