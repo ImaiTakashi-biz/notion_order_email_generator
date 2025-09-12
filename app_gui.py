@@ -33,6 +33,13 @@ class Application(ttk.Frame):
         self.selected_account = tk.StringVar()
         self.sender_email_var = tk.StringVar()
 
+        # スピナー関連
+        self.spinner_var = tk.StringVar()
+        self.spinner_running = False
+        self.spinner_frames = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"]
+        self.spinner_index = 0
+        self._after_id = None
+
         self.accounts = config.load_email_accounts()
         if self.accounts:
             account_names = list(self.accounts.keys())
@@ -97,8 +104,14 @@ class Application(ttk.Frame):
         top_pane = ttk.Frame(main_container)
         top_pane.grid(row=0, column=0, sticky="ew", pady=(0, 15))
         
-        self.get_data_button = ttk.Button(top_pane, text="1. Notionからデータを取得", command=self.start_data_retrieval, style="Primary.TButton")
+        action_frame = ttk.Frame(top_pane)
+        action_frame.pack(side=tk.LEFT, anchor='w')
+
+        self.get_data_button = ttk.Button(action_frame, text="1. Notionからデータを取得", command=self.start_data_retrieval, style="Primary.TButton")
         self.get_data_button.pack(side=tk.LEFT, ipady=5)
+
+        self.spinner_label = ttk.Label(action_frame, textvariable=self.spinner_var, font=("Yu Gothic UI", 14), foreground=self.ACCENT_COLOR)
+        # 初期状態ではpackしない（非表示）
 
         account_frame = ttk.LabelFrame(top_pane, text="送信者アカウント")
         account_frame.pack(side=tk.RIGHT, fill=tk.X, padx=(20, 0))
@@ -173,6 +186,30 @@ class Application(ttk.Frame):
         self.log_display.configure(state='disabled')
         self.log_display.tag_configure("emphasis", foreground=self.EMPHASIS_COLOR, font=("Yu Gothic UI", 12, "bold"))
 
+    def start_spinner(self):
+        if self.spinner_running:
+            return
+        self.spinner_running = True
+        self.spinner_label.pack(side=tk.LEFT, padx=(10, 0), anchor='center')
+        self.animate_spinner()
+
+    def stop_spinner(self):
+        if not self.spinner_running:
+            return
+        if self._after_id:
+            self.master.after_cancel(self._after_id)
+            self._after_id = None
+        self.spinner_var.set("")
+        self.spinner_label.pack_forget()
+        self.spinner_running = False
+
+    def animate_spinner(self):
+        if not self.spinner_running:
+            return
+        self.spinner_var.set(self.spinner_frames[self.spinner_index])
+        self.spinner_index = (self.spinner_index + 1) % len(self.spinner_frames)
+        self._after_id = self.master.after(80, self.animate_spinner)
+
     def update_sender_label(self, *args):
         account_name = self.selected_account.get()
         if account_name in self.accounts:
@@ -198,6 +235,7 @@ class Application(ttk.Frame):
             return
 
         self.processing = True; self.toggle_buttons(False); self.clear_displays()
+        self.start_spinner()
         threading.Thread(target=self.run_thread, args=(self.get_data_task,)).start()
         self.master.after(100, self.check_queue)
 
@@ -206,6 +244,7 @@ class Application(ttk.Frame):
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
         if selected_supplier in self.sent_suppliers: self.clear_preview(); return
         self.processing = True; self.toggle_buttons(False)
+        self.start_spinner()
         self.update_table_for_supplier(selected_supplier)
         threading.Thread(target=self.run_thread, args=(self.pdf_creation_flow_task,)).start()
         self.master.after(100, self.check_queue)
@@ -214,6 +253,7 @@ class Application(ttk.Frame):
         if self.processing or not self.current_pdf_path: return
         if not messagebox.askyesno("メール送信確認", f"{self.to_var.get()} 宛にメールを送信します。よろしいですか？"): return
         self.processing = True; self.toggle_buttons(False)
+        self.start_spinner()
         threading.Thread(target=self.run_thread, args=(self.send_mail_task,)).start()
         self.master.after(100, self.check_queue)
 
@@ -280,6 +320,7 @@ class Application(ttk.Frame):
                 elif command == "task_complete":
                     self.processing = False
                     self.toggle_buttons(True)
+                    self.stop_spinner()
         except queue.Empty: 
             self.master.after(100, self.check_queue)
         except Exception as e:
@@ -329,10 +370,13 @@ class Application(ttk.Frame):
 
     def ask_and_update_notion(self, supplier, page_ids):
         if messagebox.askyesno("Notion更新確認", f"メール送信が完了しました。\n\n「{supplier}」のNotionページの「発注日」を更新しますか？"):
-            self.processing = True; self.toggle_buttons(False)
+            self.processing = True
+            self.toggle_buttons(False)
             self.log(f"「{supplier}」のNotionページを更新中...")
+            self.start_spinner()
             threading.Thread(target=self.run_thread, args=(self.update_notion_task, page_ids)).start()
-        else: self.mark_as_sent(supplier, updated=False)
+        else:
+            self.mark_as_sent(supplier, updated=False)
 
     def update_notion_task(self, page_ids):
         notion_api.update_notion_pages(page_ids)
@@ -347,7 +391,7 @@ class Application(ttk.Frame):
         except ValueError: pass
         self.clear_preview()
         status = "更新済み" if updated else "更新スキップ"
-        self.log(f"-> 「{supplier}」は送信済みとしてマークされました。({status})")
+        self.log(f"-> 「{supplier}」は送信済みとしてマークされました。(status)")
         self.q.put(("task_complete", None))
 
     def update_table_for_supplier(self, supplier_name):

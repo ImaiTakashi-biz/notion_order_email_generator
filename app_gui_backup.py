@@ -49,23 +49,23 @@ class Application(ttk.Frame):
         style = ttk.Style(self.master)
         style.theme_use("clam")
 
-        # --- モダンなライトテーマのカラーパレット ---
+        # --- モダンなライトテーマのカラーパレット (アクセント追加) ---
         self.BG_COLOR = "#F8F9FA"
         self.TEXT_COLOR = "#212529"
-        self.PRIMARY_COLOR = "#4A90E2"  # 落ち着いた青
-        self.SECONDARY_COLOR = "#6C757D"
+        self.PRIMARY_COLOR = "#4A90E2"      # 落ち着いた青
+        self.ACCENT_COLOR = "#8A2BE2"       # アクセント: ブルーバイオレット
         self.LIGHT_BG = "#FFFFFF"
         self.HEADER_FG = "#FFFFFF"
-        self.SELECT_BG = "#D4E6F1"  # 選択行の背景色
-        self.SELECT_FG = "#1A5276"  # 選択行のテキスト色
-        self.EMPHASIS_COLOR = "#E74C3C" # 強調用の赤
+        self.SELECT_BG = "#E8DAF5"          # 選択行の背景色 (紫系)
+        self.SELECT_FG = "#000000"          # 選択行のテキスト色
+        self.EMPHASIS_COLOR = self.ACCENT_COLOR # 強調色
         self.BORDER_COLOR = "#DEE2E6"
 
         style.configure(".", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 10))
         style.configure("TFrame", background=self.BG_COLOR)
         style.configure("TLabel", background=self.BG_COLOR, foreground=self.TEXT_COLOR)
         style.configure("TLabelFrame", background=self.BG_COLOR, bordercolor=self.BORDER_COLOR, relief="solid", borderwidth=1)
-        style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.PRIMARY_COLOR, font=("Yu Gothic UI", 11, "bold"))
+        style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.ACCENT_COLOR, font=("Yu Gothic UI", 11, "bold"))
 
         style.configure("TButton", font=("Yu Gothic UI", 10, "bold"), borderwidth=0, padding=(15, 10))
         style.configure("Primary.TButton", background=self.PRIMARY_COLOR, foreground=self.HEADER_FG)
@@ -121,7 +121,7 @@ class Application(ttk.Frame):
         table_pane = ttk.LabelFrame(middle_pane, text="発注対象データ")
         middle_pane.add(table_pane, weight=3)
 
-        self.supplier_listbox = tk.Listbox(supplier_pane, exportselection=False, bg=self.LIGHT_BG, fg=self.TEXT_COLOR, selectbackground=self.PRIMARY_COLOR, selectforeground=self.HEADER_FG, font=("Yu Gothic UI", 11), relief="flat", borderwidth=0, highlightthickness=0)
+        self.supplier_listbox = tk.Listbox(supplier_pane, exportselection=False, bg=self.LIGHT_BG, fg=self.TEXT_COLOR, selectbackground=self.SELECT_BG, selectforeground=self.SELECT_FG, font=("Yu Gothic UI", 11), relief="flat", borderwidth=0, highlightthickness=0)
         self.supplier_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(1,0), pady=1)
         self.supplier_listbox.bind("<<ListboxSelect>>", self.on_supplier_select)
         supplier_vsb = ttk.Scrollbar(supplier_pane, orient="vertical", command=self.supplier_listbox.yview, style="Vertical.TScrollbar")
@@ -155,7 +155,7 @@ class Application(ttk.Frame):
             ttk.Label(preview_grid, textvariable=var, font=("Yu Gothic UI", 9, "bold")).grid(row=i, column=1, sticky=tk.W, padx=5)
         
         ttk.Label(preview_grid, text="添付PDF:", font=("Yu Gothic UI", 9)).grid(row=3, column=0, sticky=tk.W, padx=5, pady=3)
-        self.pdf_label = ttk.Label(preview_grid, textvariable=self.pdf_var, foreground=self.PRIMARY_COLOR, cursor="hand2", font=("Yu Gothic UI", 9, "underline"))
+        self.pdf_label = ttk.Label(preview_grid, textvariable=self.pdf_var, foreground=self.ACCENT_COLOR, cursor="hand2", font=("Yu Gothic UI", 9, "underline"))
         self.pdf_label.grid(row=3, column=1, sticky=tk.W, padx=5)
         self.pdf_label.bind("<Button-1>", self.open_current_pdf)
         preview_grid.columnconfigure(1, weight=1)
@@ -261,7 +261,7 @@ class Application(ttk.Frame):
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
         print(f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})...")
         items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
-        success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds)
+        success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds, account_name)
         if success:
             page_ids_to_update = [item['page_id'] for item in items]
             self.q.put(("ask_and_update_notion", (selected_supplier, page_ids_to_update)))
@@ -347,7 +347,7 @@ class Application(ttk.Frame):
         except ValueError: pass
         self.clear_preview()
         status = "更新済み" if updated else "更新スキップ"
-        self.log(f"-> 「{supplier}」は送信済みとしてマークされました。({status})")
+        self.log(f"-> 「{supplier}」は送信済みとしてマークされました。(status)")
         self.q.put(("task_complete", None))
 
     def update_table_for_supplier(self, supplier_name):
