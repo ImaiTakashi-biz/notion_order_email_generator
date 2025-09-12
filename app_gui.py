@@ -110,7 +110,7 @@ class Application(ttk.Frame):
         self.get_data_button = ttk.Button(action_frame, text="1. Notionからデータを取得", command=self.start_data_retrieval, style="Primary.TButton")
         self.get_data_button.pack(side=tk.LEFT, ipady=5)
 
-        self.spinner_label = ttk.Label(action_frame, textvariable=self.spinner_var, font=("Yu Gothic UI", 14), foreground=self.ACCENT_COLOR)
+        self.spinner_label = ttk.Label(action_frame, textvariable=self.spinner_var, font=("Yu Gothic UI", 16), foreground=self.ACCENT_COLOR)
         # 初期状態ではpackしない（非表示）
 
         account_frame = ttk.LabelFrame(top_pane, text="送信者アカウント")
@@ -415,8 +415,6 @@ class Application(ttk.Frame):
     def toggle_buttons(self, enabled):
         state = "normal" if enabled else "disabled"
         self.get_data_button.config(state=state)
-        # The settings button was removed, so no need to toggle it.
-        # self.settings_button.config(state=state)
 
     def open_current_pdf(self, event=None):
         if self.current_pdf_path and os.path.exists(self.current_pdf_path):
