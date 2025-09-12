@@ -360,12 +360,13 @@ class Application(ttk.Frame):
         self.current_pdf_path = pdf_path
         self.to_var.set(info.get("email", "")); self.cc_var.set(info.get("email_cc", "")); self.contact_var.set(info.get("sales_contact", ""))
         self.pdf_var.set(os.path.basename(pdf_path) if pdf_path else "作成失敗")
-        self.log("-> プレビューの準備ができました。")
-        self.log("")
-        self.log("   宛先、担当者、PDFの内容を必ず確認してください。", "emphasis")
-        self.log("   (PDFファイル名をクリックすると内容を開けます)", "emphasis")
-        self.log("")
-        self.log("-> 内容を確認し、問題がなければ「メール送信」ボタンをクリックしてください！", "emphasis")
+        log_message = """-> プレビューの準備ができました。
+
+   宛先、担当者、PDFの内容を必ず確認してください。
+   (PDFファイル名をクリックすると内容を開けます)
+
+-> 内容を確認し、問題がなければ「メール送信」ボタンをクリックしてください！"""
+        self.log(log_message, "emphasis")
         if pdf_path: self.send_mail_button.config(state="normal")
         self.q.put(("task_complete", None))
 
