@@ -261,7 +261,7 @@ class Application(ttk.Frame):
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
         print(f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})...")
         items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
-        success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds)
+        success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds, account_name)
         if success:
             page_ids_to_update = [item['page_id'] for item in items]
             self.q.put(("ask_and_update_notion", (selected_supplier, page_ids_to_update)))

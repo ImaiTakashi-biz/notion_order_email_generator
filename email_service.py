@@ -5,7 +5,7 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import config
 
-def send_smtp_mail(info, pdf_path, sender_creds):
+def send_smtp_mail(info, pdf_path, sender_creds, account_name):
     """
     SMTPサーバー経由でPDF添付メールを送信する
     """
@@ -17,8 +17,22 @@ def send_smtp_mail(info, pdf_path, sender_creds):
             msg["Cc"] = info["email_cc"]
         msg["Subject"] = "注文書送付の件"
 
-        # メール本文
-        body = f'''{info["supplier_name"]}\n{info.get('sales_contact', 'ご担当者')} 様\n\nいつも大変お世話になります。\n添付の通り注文宜しくお願い致します。\n\n∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝\n株式会社　新井精密\n製造課　発注担当\n〒368-0061\n埼玉県秩父市小柱670番地\nTEL: 0494-26-7786\nFAX: 0494-26-7787\n∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝'''
+        # メール本文 (署名を動的に生成)
+        body = f"""{info['supplier_name']}
+{info.get('sales_contact', 'ご担当者')} 様
+
+いつも大変お世話になります。
+添付の通り注文宜しくお願い致します。
+
+∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝
+株式会社　新井精密
+発注担当： {account_name}
+〒368-0061
+埼玉県秩父市小柱670番地
+Email: {sender_creds["sender"]}
+TEL: 0494-26-7786
+FAX: 0494-26-7787
+∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝"""
         msg.attach(MIMEText(body, 'plain'))
 
         # PDF添付
