@@ -36,7 +36,7 @@ class Application(ttk.Frame):
         # スピナー関連
         self.spinner_var = tk.StringVar()
         self.spinner_running = False
-        self.spinner_frames = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"]
+        self.spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         self.spinner_index = 0
         self._after_id = None
 
@@ -206,7 +206,7 @@ class Application(ttk.Frame):
     def animate_spinner(self):
         if not self.spinner_running:
             return
-        self.spinner_var.set(self.spinner_frames[self.spinner_index])
+        self.spinner_var.set(f"Loading {self.spinner_frames[self.spinner_index]}")
         self.spinner_index = (self.spinner_index + 1) % len(self.spinner_frames)
         self._after_id = self.master.after(80, self.animate_spinner)
 
