@@ -7,6 +7,7 @@ load_dotenv()
 # Notion関連の秘匿情報
 NOTION_API_TOKEN = os.getenv("NOTION_API_TOKEN")
 PAGE_ID_CONTAINING_DB = os.getenv("NOTION_DATABASE_ID")
+NOTION_SUPPLIER_DATABASE_ID = os.getenv("NOTION_SUPPLIER_DATABASE_ID")
 
 # SMTPサーバー情報
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.office365.com")
