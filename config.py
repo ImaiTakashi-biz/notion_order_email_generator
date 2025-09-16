@@ -1,37 +1,44 @@
 import os
-from dotenv import load_dotenv, dotenv_values
+import json
+from dotenv import load_dotenv
 
-# --- .envからの読み込み ---
+# .envファイルからNotionのトークンなどを読み込む
 load_dotenv()
 
-# Notion関連の秘匿情報
+# --- JSONファイルから設定を一括で読み込む ---
+def _load_settings_from_json(file_path="email_accounts.json"):
+    """設定ファイル(JSON)を読み込む内部関数"""
+    if not os.path.exists(file_path):
+        print(f"警告: 設定ファイルが見つかりません: {file_path}")
+        return {}
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"設定ファイルの読み込み中にエラーが発生しました: {e}")
+        return {}
+
+# 起動時に一度だけ設定を読み込む
+_settings = _load_settings_from_json()
+
+# --- 各種設定を変数としてエクスポート ---
+
+# Notion関連 (引き続き.envから)
 NOTION_API_TOKEN = os.getenv("NOTION_API_TOKEN")
 PAGE_ID_CONTAINING_DB = os.getenv("NOTION_DATABASE_ID")
 NOTION_SUPPLIER_DATABASE_ID = os.getenv("NOTION_SUPPLIER_DATABASE_ID")
 
-# SMTPサーバー情報
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.office365.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+# SMTPサーバー情報 (JSONから)
+SMTP_SERVER = _settings.get("smtp_server", "smtp.office365.com")
+SMTP_PORT = int(_settings.get("smtp_port", 587))
 
-# パス設定 (.envファイルにフルパスで指定してください)
+# パス設定 (.envから)
 EXCEL_TEMPLATE_PATH = os.getenv("EXCEL_TEMPLATE_PATH")
 PDF_SAVE_DIR = os.getenv("PDF_SAVE_DIR")
 
-# --- .envからのメールアカウント読み込み ---
+# メールアカウント情報 (JSONから)
 def load_email_accounts():
     """
-    .envファイルからEMAIL_SENDER_xxとEMAIL_PASSWORD_xxのペアを読み込み、
-    アカウント情報を辞書として返します。
+    読み込まれた設定からメールアカウント情報を返します。
     """
-    config = dotenv_values()
-    accounts = {}
-    sender_prefix = "EMAIL_SENDER_"
-    sender_keys = [key for key in config if key.startswith(sender_prefix)]
-    for key in sender_keys:
-        account_name = key[len(sender_prefix):]
-        password_key = f"EMAIL_PASSWORD_{account_name}"
-        sender_email = config.get(key)
-        password = config.get(password_key)
-        if sender_email and password:
-            accounts[account_name] = {"sender": sender_email, "password": password}
-    return accounts
+    return _settings.get("accounts", {})

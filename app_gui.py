@@ -30,7 +30,7 @@ class Application(ttk.Frame):
         self.current_pdf_path = None
         self.sent_suppliers = set()
         
-        self.selected_account = tk.StringVar()
+        self.selected_account_display_name = tk.StringVar()
         self.sender_email_var = tk.StringVar()
 
         # スピナー関連
@@ -40,23 +40,30 @@ class Application(ttk.Frame):
         self.spinner_index = 0
         self._after_id = None
 
+        # アカウント情報をロードし、表示名と内部キーの対応表を作成
         self.accounts = config.load_email_accounts()
-        if self.accounts:
-            account_names = list(self.accounts.keys())
-            self.selected_account.set(account_names[0])
+        self.display_name_to_key_map = {v.get('display_name', k): k for k, v in self.accounts.items()}
         
-        self.selected_account.trace_add("write", self.update_sender_label)
+        self.selected_account_display_name.trace_add("write", self.update_sender_label)
 
         self.configure_styles()
         self.create_widgets()
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # 初期値を設定
+        if self.accounts:
+            # JSONファイルで最初に記述されているアカウントをデフォルトにする
+            first_account_key = next(iter(self.accounts))
+            default_display_name = self.accounts[first_account_key].get("display_name", first_account_key)
+            self.selected_account_display_name.set(default_display_name)
+        
         self.update_sender_label() # 初期表示
 
     def configure_styles(self):
         style = ttk.Style(self.master)
         style.theme_use("clam")
 
-        # --- モダンなライトテーマのカラーパレット (アクセント追加) ---
+        # ---モダンなライトテーマのカラーパレット (アクセント追加) ---
         self.BG_COLOR = "#F8F9FA"
         self.TEXT_COLOR = "#212529"
         self.PRIMARY_COLOR = "#4A90E2"      # 落ち着いた青
@@ -111,12 +118,12 @@ class Application(ttk.Frame):
         self.get_data_button.pack(side=tk.LEFT, ipady=5)
 
         self.spinner_label = ttk.Label(action_frame, textvariable=self.spinner_var, font=("Yu Gothic UI", 16), foreground=self.ACCENT_COLOR)
-        # 初期状態ではpackしない（非表示）
 
         account_frame = ttk.LabelFrame(top_pane, text="送信者アカウント")
         account_frame.pack(side=tk.RIGHT, fill=tk.X, padx=(20, 0))
         
-        self.account_selector = ttk.Combobox(account_frame, textvariable=self.selected_account, values=sorted(list(self.accounts.keys())), state="readonly", width=25, font=("Yu Gothic UI", 10))
+        account_display_names = sorted(list(self.display_name_to_key_map.keys()))
+        self.account_selector = ttk.Combobox(account_frame, textvariable=self.selected_account_display_name, values=account_display_names, state="readonly", width=25, font=("Yu Gothic UI", 10))
         self.account_selector.pack(side=tk.LEFT, padx=10, pady=10)
         
         sender_label_frame = ttk.Frame(account_frame)
@@ -187,33 +194,30 @@ class Application(ttk.Frame):
         self.log_display.tag_configure("emphasis", foreground=self.EMPHASIS_COLOR, font=("Yu Gothic UI", 12, "bold"))
 
     def start_spinner(self):
-        if self.spinner_running:
-            return
+        if self.spinner_running: return
         self.spinner_running = True
         self.spinner_label.pack(side=tk.LEFT, padx=(10, 0), anchor='center')
         self.animate_spinner()
 
     def stop_spinner(self):
-        if not self.spinner_running:
-            return
-        if self._after_id:
-            self.master.after_cancel(self._after_id)
-            self._after_id = None
+        if not self.spinner_running: return
+        if self._after_id: self.master.after_cancel(self._after_id)
+        self._after_id = None
         self.spinner_var.set("")
         self.spinner_label.pack_forget()
         self.spinner_running = False
 
     def animate_spinner(self):
-        if not self.spinner_running:
-            return
+        if not self.spinner_running: return
         self.spinner_var.set(f"Loading {self.spinner_frames[self.spinner_index]}")
         self.spinner_index = (self.spinner_index + 1) % len(self.spinner_frames)
         self._after_id = self.master.after(80, self.animate_spinner)
 
     def update_sender_label(self, *args):
-        account_name = self.selected_account.get()
-        if account_name in self.accounts:
-            self.sender_email_var.set(self.accounts[account_name]["sender"])
+        selected_display_name = self.selected_account_display_name.get()
+        account_key = self.display_name_to_key_map.get(selected_display_name)
+        if account_key and account_key in self.accounts:
+            self.sender_email_var.set(self.accounts[account_key]["sender"])
         else:
             self.sender_email_var.set("")
 
@@ -223,15 +227,15 @@ class Application(ttk.Frame):
         env_missing = []
         if not config.NOTION_API_TOKEN: env_missing.append("・Notion APIトークン (NOTION_API_TOKEN)")
         if not config.PAGE_ID_CONTAINING_DB: env_missing.append("・Notion データベースID (NOTION_DATABASE_ID)")
-        if not self.accounts: env_missing.append("・Emailアカウント (EMAIL_SENDER_xx)")
+        if not self.accounts: env_missing.append("・Emailアカウント (email_accounts.json)")
         if not config.EXCEL_TEMPLATE_PATH: env_missing.append("・Excelテンプレートのパス (EXCEL_TEMPLATE_PATH)")
         if not config.PDF_SAVE_DIR: env_missing.append("・PDF保存先フォルダ (PDF_SAVE_DIR)")
         if env_missing:
-            messagebox.showerror("設定エラー (.env)", ".envファイルに以下の設定が必要です。\n\n" + "\n".join(env_missing))
+            messagebox.showerror("設定エラー", "以下の設定を確認してください。\n\n" + "\n".join(env_missing))
             return
 
         if not os.path.exists(config.EXCEL_TEMPLATE_PATH):
-            messagebox.showerror("設定エラー (Excel)", f"Excelテンプレートが見つかりません。\n.envファイルでパスを確認してください。\n\n現在のパス: {config.EXCEL_TEMPLATE_PATH}")
+            messagebox.showerror("設定エラー (Excel)", f"Excelテンプレートが見つかりません。\nパスを確認してください。\n\n現在のパス: {config.EXCEL_TEMPLATE_PATH}")
             return
 
         self.processing = True; self.toggle_buttons(False); self.clear_displays()
@@ -276,9 +280,12 @@ class Application(ttk.Frame):
         import pythoncom
         pythoncom.CoInitialize()
         try:
-            account_name = self.selected_account.get()
-            sender_creds = self.accounts[account_name]
-            sender_info = {"name": account_name, "email": sender_creds["sender"]}
+            selected_display_name = self.selected_account_display_name.get()
+            account_key = self.display_name_to_key_map.get(selected_display_name)
+            if not account_key: return self.q.put(("task_complete", None))
+            
+            sender_creds = self.accounts[account_key]
+            sender_info = {"name": sender_creds.get("display_name", account_key), "email": sender_creds["sender"]}
             selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
             
             print(f"「{selected_supplier}」の注文書PDF作成準備中...")
@@ -296,12 +303,16 @@ class Application(ttk.Frame):
             pythoncom.CoUninitialize()
 
     def send_mail_task(self):
-        account_name = self.selected_account.get()
-        sender_creds = self.accounts[account_name]
+        selected_display_name = self.selected_account_display_name.get()
+        account_key = self.display_name_to_key_map.get(selected_display_name)
+        if not account_key: return self.q.put(("task_complete", None))
+
+        sender_creds = self.accounts[account_key]
+        display_name = sender_creds.get("display_name", account_key)
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
         print(f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})...")
         items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
-        success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds, account_name)
+        success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds, display_name)
         if success:
             page_ids_to_update = [item['page_id'] for item in items]
             self.q.put(("ask_and_update_notion", (selected_supplier, page_ids_to_update)))
