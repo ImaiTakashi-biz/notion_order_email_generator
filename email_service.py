@@ -25,15 +25,15 @@ def send_smtp_mail(info, pdf_path, sender_creds, account_name):
 いつも大変お世話になります。
 添付の通り注文宜しくお願い致します。
 
-∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝
-株式会社　新井精密
+∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝
+株式会社 新井精密
 発注担当： {account_name}
 〒368-0061
 埼玉県秩父市小柱670番地
 Email: {sender_creds["sender"]}
 TEL: 0494-26-7786
 FAX: 0494-26-7787
-∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝"""
+∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝"""
         msg.attach(MIMEText(body, 'plain'))
 
         # PDF添付
