@@ -42,3 +42,9 @@ def load_email_accounts():
     読み込まれた設定からメールアカウント情報を返します。
     """
     return _settings.get("accounts", {})
+
+def load_department_defaults():
+    """
+    読み込まれた設定から部署ごとのデフォルトアカウント情報を返します。
+    """
+    return _settings.get("department_defaults", {})
