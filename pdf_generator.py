@@ -52,7 +52,7 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info):
         # 一時ファイルなしで直接PDFに変換
         ws.ExportAsFixedFormat(0, pdf_path)
         
-        print(f"-> PDF作成完了: {pdf_filename}")
+        
         return pdf_path
         
     except Exception as e:

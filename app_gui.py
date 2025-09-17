@@ -94,8 +94,8 @@ class Application(ttk.Frame):
         
         style.configure("Treeview", background=self.LIGHT_BG, fieldbackground=self.LIGHT_BG, foreground=self.TEXT_COLOR, rowheight=28, font=("Yu Gothic UI", 10))
         style.map("Treeview", background=[("selected", self.SELECT_BG)], foreground=[("selected", self.SELECT_FG)])
-        style.configure("Treeview.Heading", background=self.PRIMARY_COLOR, foreground=self.HEADER_FG, font=("Yu Gothic UI", 10, "bold"), padding=8)
-        style.map("Treeview.Heading", background=[("active", "#357ABD")])
+        style.configure("Treeview.Heading", background="#6C757D", foreground=self.HEADER_FG, font=("Yu Gothic UI", 10, "bold"), padding=8)
+        style.map("Treeview.Heading", background=[("active", "#495057")])
 
         style.configure("TCombobox", font=("Yu Gothic UI", 10), fieldbackground=self.LIGHT_BG, padding=5)
         style.configure("Vertical.TScrollbar", background=self.PRIMARY_COLOR, troughcolor=self.BG_COLOR, arrowcolor=self.HEADER_FG)
@@ -235,6 +235,7 @@ class Application(ttk.Frame):
         self.log_display.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
         self.log_display.configure(state='disabled')
         self.log_display.tag_configure("emphasis", foreground=self.EMPHASIS_COLOR, font=("Yu Gothic UI", 12, "bold"))
+        self.log_display.tag_configure("error", foreground="red", font=("Consolas", 11, "bold"))
 
         # --- 4. 最下段: メール送信ボタン ---
         send_button_area = ttk.Frame(main_container)
@@ -326,19 +327,22 @@ class Application(ttk.Frame):
         try:
             task_func(*args)
         except Exception as e:
-            self.q.put(("log", f"\nスレッド処理中にエラーが発生しました: {e}"))
+            self.q.put(("log", f"\nスレッド処理中にエラーが発生しました: {e}", "error"))
             self.q.put(("task_complete", None))
         finally:
             sys.stdout = original_stdout
 
     def get_data_task(self):
+        self.q.put(("log", "----------------------------------------"))
+        self.q.put(("log", "STEP 1: Notionからデータを取得"))
+        self.q.put(("log", "----------------------------------------"))
         if self.selected_departments:
-            self.q.put(("log", f"部署名「{', '.join(self.selected_departments)}」でフィルタリング中..."))
+            self.q.put(("log", f"""部署名「{', '.join(self.selected_departments)}」でフィルタリング中...
+Notionからデータ取得中..."""))
         else:
-            self.q.put(("log", "部署名フィルターは未選択です。"))
-        self.q.put(("log", "Notionからデータ取得中..."))
+            self.q.put(("log", "部署名フィルターは未選択です。\nNotionからデータ取得中..."))
         data = notion_api.get_order_data_from_notion(department_names=self.selected_departments)
-        self.q.put(("log", f"-> {len(data)}件の要発注データが見つかりました。"))
+        self.q.put(("log", f"✅ 完了 ({len(data)}件の要発注データが見つかりました)"))
         self.q.put(("update_data_ui", data))
 
     def pdf_creation_flow_task(self):
@@ -353,7 +357,11 @@ class Application(ttk.Frame):
             sender_info = {"name": sender_creds.get("display_name", account_key), "email": sender_creds["sender"]}
             selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
             
-            self.q.put(("log", f"「{selected_supplier}」の注文書PDFを作成しています..."))
+            self.q.put(("log", ""))
+            self.q.put(("log", "----------------------------------------"))
+            self.q.put(("log", "STEP 3: 注文書PDFの作成"))
+            self.q.put(("log", "----------------------------------------"))
+            self.q.put(("log", f"「{selected_supplier}」の注文書を作成しています..."))
             items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
             if not items: return self.q.put(("task_complete", None))
 
@@ -387,12 +395,16 @@ class Application(ttk.Frame):
     def check_queue(self):
         try:
             while True:
-                command, data = self.q.get_nowait()
-                if command == "log": self.log(data.strip())
-                elif command == "update_data_ui": self.update_data_ui(data)
-                elif command == "ask_and_update_notion": self.ask_and_update_notion(data[0], data[1])
-                elif command == "mark_as_sent_after_update": self.mark_as_sent(data)
-                elif command == "update_preview_ui": self.update_preview_ui(data)
+                item = self.q.get_nowait()
+                command = item[0]
+                message = item[1]
+                tag = item[2] if len(item) > 2 else None # tagを安全に取り出す
+
+                if command == "log": self.log(message.strip(), tag)
+                elif command == "update_data_ui": self.update_data_ui(message)
+                elif command == "ask_and_update_notion": self.ask_and_update_notion(message[0], message[1])
+                elif command == "mark_as_sent_after_update": self.mark_as_sent(message)
+                elif command == "update_preview_ui": self.update_preview_ui(message)
                 elif command == "task_complete":
                     self.processing = False
                     self.toggle_buttons(True)
@@ -401,7 +413,7 @@ class Application(ttk.Frame):
             self.master.after(100, self.check_queue)
         except Exception as e:
             error_message = f"UI更新中に致命的なエラーが発生しました: {e}"
-            self.log(error_message, "emphasis")
+            self.q.put(("log", error_message, "error"))
             import traceback
             traceback.print_exc()
             self.processing = False
@@ -424,10 +436,12 @@ class Application(ttk.Frame):
         if not data:
             self.log("-> 発注対象のデータは見つかりませんでした。")
         else:
-            
-            self.log("▼仕入先を選択してください", "emphasis")
-            self.log("リストから仕入先をクリックすると、注文書PDFが自動で作成・表示されます。", "emphasis")
             self.log("")
+            self.log("----------------------------------------")
+            self.log("STEP 2: 仕入先の選択")
+            self.log("----------------------------------------")
+            self.log("▼リストから仕入先を選択してください。", "emphasis")
+            self.log("  クリックすると注文書が自動作成されます。", "emphasis")
         self.q.put(("task_complete", None))
 
     def update_preview_ui(self, data):
@@ -435,11 +449,24 @@ class Application(ttk.Frame):
         self.current_pdf_path = pdf_path
         self.to_var.set(info.get("email", "")); self.cc_var.set(info.get("email_cc", "")); self.contact_var.set(info.get("sales_contact", ""))
         self.pdf_var.set(os.path.basename(pdf_path) if pdf_path else "作成失敗")
-        log_message = """▼プレビューを確認してください
-宛先、担当者、PDFの内容は正しいですか？
-(ファイル名をクリックするとPDFを開けます)
--> 問題がなければ「メール送信」ボタンをクリックしてください。"""
-        self.log(log_message, "emphasis")
+        if pdf_path:
+            self.log("✅ 完了")
+            self.log(f"  -> {os.path.basename(pdf_path)}")
+        else:
+            self.log("❌ PDF作成に失敗しました。")
+
+        self.log("")
+        self.log("----------------------------------------")
+        self.log("STEP 4: 内容の確認とメール送信")
+        self.log("----------------------------------------")
+        self.log("▼生成されたPDFプレビューで、以下の内容が正しいかご確認ください。", "emphasis")
+        self.log("  (ファイル名をクリックするとPDFが開きます)", "emphasis")
+        self.log("  - 宛先", "emphasis")
+        self.log("  - 担当者", "emphasis")
+        self.log("  - 注文内容", "emphasis")
+        self.log("")
+        self.log("-> 問題がなければ「メール送信」ボタンをクリックしてください。", "emphasis")
+        self.log("")
         if pdf_path: self.send_mail_button.config(state="normal")
         self.q.put(("task_complete", None))
 
