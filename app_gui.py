@@ -223,7 +223,7 @@ class Application(ttk.Frame):
         send_button_frame = ttk.Frame(bottom_pane)
         send_button_frame.grid(row=0, column=1, sticky="nsew")
         self.send_mail_button = ttk.Button(send_button_frame, text="メール送信", command=self.send_single_mail, state="disabled", style="Primary.TButton")
-        self.send_mail_button.pack(expand=True, fill=tk.BOTH)
+        self.send_mail_button.pack(expand=True, ipadx=40, ipady=15) # 内部パディングでサイズを調整し、中央に配置
 
         # --- 4. ログ ---
         log_frame = ttk.LabelFrame(main_container, text="ログ")
