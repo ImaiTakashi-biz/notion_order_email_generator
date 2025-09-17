@@ -79,8 +79,12 @@ class Application(ttk.Frame):
         style.configure(".", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 10))
         style.configure("TFrame", background=self.BG_COLOR)
         style.configure("TLabel", background=self.BG_COLOR, foreground=self.TEXT_COLOR)
+        style.configure("Light.TLabel", background=self.LIGHT_BG) # 白背景のLabelスタイル
+
+        # PDFリンク用のスタイル
+        style.configure("PdfLink.TLabel", background=self.LIGHT_BG, foreground=self.ACCENT_COLOR, font=("Yu Gothic UI", 9, "underline"))
         style.configure("TLabelFrame", background=self.BG_COLOR, bordercolor=self.BORDER_COLOR, relief="solid", borderwidth=1)
-        style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.ACCENT_COLOR, font=("Yu Gothic UI", 11, "bold"))
+        style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 11, "bold")) # フォントサイズを11に戻す
 
         style.configure("TButton", font=("Yu Gothic UI", 10, "bold"), borderwidth=0, padding=(15, 10))
         style.configure("Primary.TButton", background=self.PRIMARY_COLOR, foreground=self.HEADER_FG)
@@ -99,6 +103,7 @@ class Application(ttk.Frame):
 
         # --- 強調用スタイル ---
         style.configure("Highlight.TFrame", background="#EAF2F8", bordercolor=self.PRIMARY_COLOR) # 枠線の色も変更
+        style.configure("Light.TFrame", background=self.LIGHT_BG) # 白背景のFrameスタイル
         
         # チェックボタンのスタイル
         style.configure("Highlight.TCheckbutton", background="#EAF2F8", font=("Yu Gothic UI", 10))
@@ -116,8 +121,8 @@ class Application(ttk.Frame):
         main_container = ttk.Frame(self, padding=15)
         main_container.pack(fill=tk.BOTH, expand=True)
         main_container.rowconfigure(1, weight=1) # 中段のペインが伸縮
-        main_container.rowconfigure(2, weight=0) # 下段は固定
-        main_container.rowconfigure(3, weight=1) # ログが伸縮
+        main_container.rowconfigure(2, weight=1) # 下段(プレビュー&ログ)が伸縮
+        main_container.rowconfigure(3, weight=0) # ボタンエリアは固定
         main_container.columnconfigure(0, weight=1)
 
         # --- 1. 上段: アクションとアカウント ---
@@ -143,7 +148,7 @@ class Application(ttk.Frame):
         department_container.pack(fill=tk.X, pady=(5,0))
 
         # タイトルラベル
-        title_label = ttk.Label(department_container, text="部署名フィルター", font=("Yu Gothic UI", 12, "bold"), foreground=self.PRIMARY_COLOR, background="#EAF2F8") # 文字色と背景色を変更
+        title_label = ttk.Label(department_container, text="部署名フィルター", font=("Yu Gothic UI", 12, "bold"), foreground=self.PRIMARY_COLOR, background="#EAF2F8") # フォントサイズを12に戻す
         title_label.pack(anchor="w", padx=10, pady=(0, 2))
 
         departments = ["生産部", "品質保証部", "営業部", "総務部"]
@@ -197,41 +202,48 @@ class Application(ttk.Frame):
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         vsb.pack(side=tk.RIGHT, fill=tk.Y, pady=1); hsb.pack(side=tk.BOTTOM, fill=tk.X, padx=1); self.tree.pack(fill=tk.BOTH, expand=True, padx=1, pady=(1,0))
 
-        # --- 3. 下段: プレビューと送信 ---
-        bottom_pane = ttk.Frame(main_container)
-        bottom_pane.grid(row=2, column=0, sticky="ew", pady=15)
-        bottom_pane.columnconfigure(0, weight=3)
-        bottom_pane.columnconfigure(1, weight=1)
+        # --- 3. 下段: プレビューとログ (左右分割) ---
+        bottom_and_log_pane = ttk.PanedWindow(main_container, orient=tk.HORIZONTAL)
+        bottom_and_log_pane.grid(row=2, column=0, sticky="nsew", pady=(15, 0))
 
-        preview_frame = ttk.LabelFrame(bottom_pane, text="3. 内容を確認して送信")
-        preview_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 15))
-        
+        # --- 3a. プレビューエリア (左) ---
+        # ttk.LabelFrameに戻し、スタイルで色を統一する
+        preview_frame = ttk.LabelFrame(bottom_and_log_pane, text="3. 内容を確認して送信")
+        bottom_and_log_pane.add(preview_frame, weight=1)
+
         self.to_var, self.cc_var, self.contact_var, self.pdf_var = tk.StringVar(), tk.StringVar(), tk.StringVar(), tk.StringVar()
-        preview_grid = ttk.Frame(preview_frame, padding=10)
+        preview_grid = ttk.Frame(preview_frame, padding=10, style="Light.TFrame")
         preview_grid.pack(fill="both", expand=True)
         preview_labels = {"宛先(To):": self.to_var, "宛先(Cc):": self.cc_var, "担当者:": self.contact_var}
         for i, (text, var) in enumerate(preview_labels.items()):
-            ttk.Label(preview_grid, text=text, font=("Yu Gothic UI", 9)).grid(row=i, column=0, sticky=tk.W, padx=5, pady=3)
-            ttk.Label(preview_grid, textvariable=var, font=("Yu Gothic UI", 9, "bold")).grid(row=i, column=1, sticky=tk.W, padx=5)
+            ttk.Label(preview_grid, text=text, font=("Yu Gothic UI", 9), style="Light.TLabel").grid(row=i, column=0, sticky=tk.W, padx=5, pady=3)
+            ttk.Label(preview_grid, textvariable=var, font=("Yu Gothic UI", 9, "bold"), style="Light.TLabel").grid(row=i, column=1, sticky=tk.W, padx=5)
         
-        ttk.Label(preview_grid, text="添付PDF:", font=("Yu Gothic UI", 9)).grid(row=3, column=0, sticky=tk.W, padx=5, pady=3)
-        self.pdf_label = ttk.Label(preview_grid, textvariable=self.pdf_var, foreground=self.ACCENT_COLOR, cursor="hand2", font=("Yu Gothic UI", 9, "underline"))
+        ttk.Label(preview_grid, text="添付PDF:", font=("Yu Gothic UI", 9), style="Light.TLabel").grid(row=3, column=0, sticky=tk.W, padx=5, pady=3)
+        self.pdf_label = ttk.Label(preview_grid, textvariable=self.pdf_var, cursor="hand2", style="PdfLink.TLabel")
         self.pdf_label.grid(row=3, column=1, sticky=tk.W, padx=5)
         self.pdf_label.bind("<Button-1>", self.open_current_pdf)
         preview_grid.columnconfigure(1, weight=1)
 
-        send_button_frame = ttk.Frame(bottom_pane)
-        send_button_frame.grid(row=0, column=1, sticky="nsew")
-        self.send_mail_button = ttk.Button(send_button_frame, text="メール送信", command=self.send_single_mail, state="disabled", style="Primary.TButton")
-        self.send_mail_button.pack(expand=True, ipadx=40, ipady=15) # 内部パディングでサイズを調整し、中央に配置
+        # --- 3b. ログエリア (右) ---
+        log_frame = ttk.LabelFrame(bottom_and_log_pane, text="ログ")
+        bottom_and_log_pane.add(log_frame, weight=1) # weight=1で均等分割
 
-        # --- 4. ログ ---
-        log_frame = ttk.LabelFrame(main_container, text="ログ")
-        log_frame.grid(row=3, column=0, sticky="nsew")
         self.log_display = scrolledtext.ScrolledText(log_frame, height=10, wrap=tk.WORD, bg=self.LIGHT_BG, fg=self.TEXT_COLOR, font=("Consolas", 11), relief="flat", borderwidth=0, highlightthickness=0)
         self.log_display.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
         self.log_display.configure(state='disabled')
         self.log_display.tag_configure("emphasis", foreground=self.EMPHASIS_COLOR, font=("Yu Gothic UI", 12, "bold"))
+
+        # --- 4. 最下段: メール送信ボタン ---
+        send_button_area = ttk.Frame(main_container)
+        send_button_area.grid(row=3, column=0, sticky="ew", pady=(15, 0))
+        
+        # 中央に配置するためのコンテナ
+        send_button_container = ttk.Frame(send_button_area)
+        send_button_container.pack(expand=True)
+
+        self.send_mail_button = ttk.Button(send_button_container, text="メール送信", command=self.send_single_mail, state="disabled", style="Primary.TButton")
+        self.send_mail_button.pack(ipadx=40, ipady=15) # サイズ調整は維持
 
     def start_spinner(self):
         if self.spinner_running: return
