@@ -16,11 +16,9 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info):
     workbook = None
     
     if not config.EXCEL_TEMPLATE_PATH or not os.path.exists(config.EXCEL_TEMPLATE_PATH):
-        print(f"エラー: Excelテンプレートが見つかりません。パスを確認してください: {config.EXCEL_TEMPLATE_PATH}")
         return None
 
     try:
-        print(f"PDFを生成中... (仕入先名: {supplier_name})")
         excel = win32com.client.Dispatch("Excel.Application")
         excel.Visible = False
         excel.DisplayAlerts = False

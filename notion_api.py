@@ -56,7 +56,6 @@ def get_order_data_from_notion(department_names=None):
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             # 1. 仕入先DB取得と注文DB取得を並列で実行
-            # (内部処理のログは削除)
             future_suppliers = executor.submit(_get_all_pages_from_db, notion, config.NOTION_SUPPLIER_DATABASE_ID)
             
             # --- フィルター条件の構築 ---
@@ -95,34 +94,26 @@ def get_order_data_from_notion(department_names=None):
             # 両方の処理が終わるのを待って結果を取得
             all_suppliers = future_suppliers.result()
             order_pages = future_orders.result()
-            # (内部処理のログは削除)
 
         # 取得したデータを後処理
         suppliers_map = {page['id']: page['properties'] for page in all_suppliers}
-        # (内部処理のログは削除)
         total_orders = len(order_pages)
         
         if total_orders == 0:
-            # (内部処理のログは削除)
             return []
-            
-        # (内部処理のログは削除)
 
         # 3. 取得した注文データと仕入先データを結合
-        # (内部処理のログは削除)
         for i, page in enumerate(order_pages):
             props = page.get("properties", {})
             
             supplier_relation = props.get("DB_仕入先リスト", {}).get("relation", [])
             if not supplier_relation:
-                # (内部処理のログは削除)
                 continue
             
             supplier_page_id = supplier_relation[0].get("id")
             supplier_props = suppliers_map.get(supplier_page_id)
 
             if not supplier_props:
-                # (内部処理のログは削除)
                 continue
 
             # ヘルパー関数を使って安全にデータを抽出
@@ -136,10 +127,7 @@ def get_order_data_from_notion(department_names=None):
                 "email": _get_safe_email(supplier_props.get("メール")),
                 "email_cc": _get_safe_email(supplier_props.get("メール CC:")),
             })
-            # (内部処理のログは削除)
         
-        # (内部処理のログは削除)
-
     except Exception as e:
         pass
         
@@ -150,7 +138,6 @@ def update_notion_pages(page_ids):
     if not page_ids:
         return
         
-    # print(f"{len(page_ids)}件のNotionページの「発注日」を更新中...") // app_gui.pyでログ出力
     notion = Client(auth=config.NOTION_API_TOKEN)
     today = datetime.now().strftime("%Y-%m-%d")
     
@@ -160,10 +147,6 @@ def update_notion_pages(page_ids):
                 page_id=page_id,
                 properties={"発注日": {"date": {"start": today}}}
             )
-            # print(f"({i+1}/{len(page_ids)}) {page_id} の更新完了") // app_gui.pyでログ出力
             time.sleep(0.35)
         except Exception as e:
-            # print(f"エラー: {page_id} の更新に失敗しました. {e}") // app_gui.pyでエラーハンドリング
             pass # app_gui.pyでエラーハンドリング
-            
-    # print("Notionページの更新が完了しました。")

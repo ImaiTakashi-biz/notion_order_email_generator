@@ -10,7 +10,6 @@ def send_smtp_mail(info, pdf_path, sender_creds, account_name):
     SMTPサーバー経由でPDF添付メールを送信する
     """
     try:
-        print(f"メール送信中... (宛先: {info['email']})")
         msg = MIMEMultipart()
         msg["From"] = sender_creds["sender"]
         msg["To"] = info["email"]
@@ -49,7 +48,6 @@ FAX: 0494-26-7787
             recipients = [info["email"]] + ([info["email_cc"]] if info["email_cc"] else [])
             server.sendmail(sender_creds["sender"], recipients, msg.as_string())
             
-        print(f"-> メール送信完了 (To: {info['email']})")
         return True
     except Exception as e:
         print(f"メール送信エラー: {e}")
