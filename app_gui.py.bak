@@ -29,7 +29,6 @@ class Application(ttk.Frame):
         self.order_data = []
         self.current_pdf_path = None
         self.sent_suppliers = set()
-        self.department_vars = {}
         
         self.selected_account_display_name = tk.StringVar()
         self.sender_email_var = tk.StringVar()
@@ -112,36 +111,16 @@ class Application(ttk.Frame):
         top_pane = ttk.Frame(main_container)
         top_pane.grid(row=0, column=0, sticky="ew", pady=(0, 15))
         
-        # --- 左側のアクションエリア ---
-        left_action_area = ttk.Frame(top_pane)
-        left_action_area.pack(side=tk.LEFT, anchor='n', fill=tk.X, expand=True)
-
-        # --- 1a. データ取得ボタン ---
-        action_frame = ttk.Frame(left_action_area)
-        action_frame.pack(fill=tk.X, pady=(0, 10))
+        action_frame = ttk.Frame(top_pane)
+        action_frame.pack(side=tk.LEFT, anchor='w')
 
         self.get_data_button = ttk.Button(action_frame, text="1. Notionからデータを取得", command=self.start_data_retrieval, style="Primary.TButton")
         self.get_data_button.pack(side=tk.LEFT, ipady=5)
 
         self.spinner_label = ttk.Label(action_frame, textvariable=self.spinner_var, font=("Yu Gothic UI", 16), foreground=self.ACCENT_COLOR)
 
-        # --- 1b. 部署名フィルター ---
-        department_frame = ttk.LabelFrame(left_action_area, text="部署名フィルター")
-        department_frame.pack(fill=tk.X, pady=(5,0))
-
-        departments = ["生産部", "品質保証部", "営業部", "総務部"]
-        self.department_vars = {name: tk.BooleanVar() for name in departments}
-        
-        checkbox_container = ttk.Frame(department_frame, padding=(10, 5))
-        checkbox_container.pack(fill=tk.X)
-
-        for i, name in enumerate(departments):
-            cb = ttk.Checkbutton(checkbox_container, text=name, variable=self.department_vars[name])
-            cb.grid(row=0, column=i, padx=(0, 15), sticky='w')
-
-        # --- 右側のアカウント選択 ---
         account_frame = ttk.LabelFrame(top_pane, text="送信者アカウント")
-        account_frame.pack(side=tk.RIGHT, anchor='n', padx=(20, 0))
+        account_frame.pack(side=tk.RIGHT, fill=tk.X, padx=(20, 0))
         
         account_display_names = sorted(list(self.display_name_to_key_map.keys()))
         self.account_selector = ttk.Combobox(account_frame, textvariable=self.selected_account_display_name, values=account_display_names, state="readonly", width=25, font=("Yu Gothic UI", 10))
@@ -256,14 +235,8 @@ class Application(ttk.Frame):
             return
 
         if not os.path.exists(config.EXCEL_TEMPLATE_PATH):
-            messagebox.showerror("設定エラー (Excel)", f"""Excelテンプレートが見つかりません。
-パスを確認してください。
-
-現在のパス: {config.EXCEL_TEMPLATE_PATH}"""
-            )
+            messagebox.showerror("設定エラー (Excel)", f"Excelテンプレートが見つかりません。\nパスを確認してください。\n\n現在のパス: {config.EXCEL_TEMPLATE_PATH}")
             return
-
-        self.selected_departments = [name for name, var in self.department_vars.items() if var.get()]
 
         self.processing = True; self.toggle_buttons(False); self.clear_displays()
         self.start_spinner()
@@ -299,12 +272,8 @@ class Application(ttk.Frame):
             sys.stdout = original_stdout
 
     def get_data_task(self):
-        if self.selected_departments:
-            print(f"部署名「{', '.join(self.selected_departments)}」でフィルタリング中...")
-        else:
-            print("部署名フィルターは未選択です。")
         print("Notionからデータ取得中...")
-        data = notion_api.get_order_data_from_notion(department_names=self.selected_departments)
+        data = notion_api.get_order_data_from_notion()
         self.q.put(("update_data_ui", data))
 
     def pdf_creation_flow_task(self):
@@ -435,7 +404,7 @@ class Application(ttk.Frame):
         except ValueError: pass
         self.clear_preview()
         status = "更新済み" if updated else "更新スキップ"
-        self.log(f"-> 「{supplier}」は送信済みとしてマークされました。({status})")
+        self.log(f"-> 「{supplier}」は送信済みとしてマークされました。(status)")
         self.q.put(("task_complete", None))
 
     def update_table_for_supplier(self, supplier_name):
@@ -465,9 +434,7 @@ class Application(ttk.Frame):
             try:
                 os.startfile(self.current_pdf_path)
             except Exception as e:
-                messagebox.showerror("エラー", f"""ファイルを開けませんでした。
-{e}"""
-                )
+                messagebox.showerror("エラー", f"ファイルを開けませんでした。\n{e}")
         else:
             messagebox.showwarning("ファイルなし", "PDFファイルが見つかりません。")
 
