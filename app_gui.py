@@ -97,6 +97,18 @@ class Application(ttk.Frame):
         
         style.configure("TPanedWindow", background=self.BORDER_COLOR)
 
+        # --- 強調用スタイル ---
+        style.configure("Highlight.TFrame", background="#EAF2F8", bordercolor=self.PRIMARY_COLOR) # 枠線の色も変更
+        
+        # チェックボタンのスタイル
+        style.configure("Highlight.TCheckbutton", background="#EAF2F8", font=("Yu Gothic UI", 10))
+        style.map("Highlight.TCheckbutton",
+                  background=[('active', '#EAF2F8')],
+                  indicatorbackground=[('active', '#EAF2F8')],
+                  # 選択されたら文字色を濃い青に、フォントを太字にする
+                  foreground=[('selected', '#357ABD')], # より濃い青に変更
+                  font=[('selected', ("Yu Gothic UI", 10, "bold"))])
+
     def create_widgets(self):
         self.pack(fill=tk.BOTH, expand=True)
 
@@ -125,19 +137,26 @@ class Application(ttk.Frame):
 
         self.spinner_label = ttk.Label(action_frame, textvariable=self.spinner_var, font=("Yu Gothic UI", 16), foreground=self.ACCENT_COLOR)
 
-        # --- 1b. 部署名フィルター ---
-        department_frame = ttk.LabelFrame(left_action_area, text="部署名フィルター")
-        department_frame.pack(fill=tk.X, pady=(5,0))
+        # --- 1b. 部署名フィルター (強調表示) ---
+        # LabelFrameの代わりにFrameとLabelで模倣する
+        department_container = ttk.Frame(left_action_area, style="Highlight.TFrame", relief="solid", borderwidth=1, padding=(0, 5))
+        department_container.pack(fill=tk.X, pady=(5,0))
+
+        # タイトルラベル
+        title_label = ttk.Label(department_container, text="部署名フィルター", font=("Yu Gothic UI", 12, "bold"), foreground=self.PRIMARY_COLOR, background="#EAF2F8") # 文字色と背景色を変更
+        title_label.pack(anchor="w", padx=10, pady=(0, 2))
 
         departments = ["生産部", "品質保証部", "営業部", "総務部"]
         self.department_vars = {name: tk.BooleanVar() for name in departments}
         
-        checkbox_container = ttk.Frame(department_frame, padding=(10, 5))
-        checkbox_container.pack(fill=tk.X)
+        # チェックボックスを配置する内部フレーム
+        checkbox_container = ttk.Frame(department_container, style="Highlight.TFrame")
+        checkbox_container.pack(fill=tk.X, padx=5)
 
         for i, name in enumerate(departments):
-            cb = ttk.Checkbutton(checkbox_container, text=name, variable=self.department_vars[name])
-            cb.grid(row=0, column=i, padx=(0, 15), sticky='w')
+            # チェックボタンにもスタイルを適用して背景色を合わせる
+            cb = ttk.Checkbutton(checkbox_container, text=name, variable=self.department_vars[name], style="Highlight.TCheckbutton")
+            cb.grid(row=0, column=i, padx=(5, 15), pady=(0,5), sticky='w')
 
         # --- 右側のアカウント選択 ---
         account_frame = ttk.LabelFrame(top_pane, text="送信者アカウント")
