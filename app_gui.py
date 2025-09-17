@@ -59,6 +59,8 @@ class Application(ttk.Frame):
             self.selected_account_display_name.set(default_display_name)
         
         self.update_sender_label() # 初期表示
+        self.log("送信者アカウントを確認してください。", "emphasis")
+        self.log("部署名を選択し、「Notionからデータを取得」ボタンをクリックしてください。", "emphasis")
 
     def configure_styles(self):
         style = ttk.Style(self.master)
@@ -84,7 +86,7 @@ class Application(ttk.Frame):
         # PDFリンク用のスタイル
         style.configure("PdfLink.TLabel", background=self.LIGHT_BG, foreground=self.ACCENT_COLOR, font=("Yu Gothic UI", 9, "underline"))
         style.configure("TLabelFrame", background=self.BG_COLOR, bordercolor=self.BORDER_COLOR, relief="solid", borderwidth=1)
-        style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 11, "bold")) # フォントサイズを11に戻す
+        style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 13, "bold")) # フォントサイズを13に統一
 
         style.configure("TButton", font=("Yu Gothic UI", 10, "bold"), borderwidth=0, padding=(15, 10))
         style.configure("Primary.TButton", background=self.PRIMARY_COLOR, foreground=self.HEADER_FG)
@@ -226,7 +228,7 @@ class Application(ttk.Frame):
         preview_grid.columnconfigure(1, weight=1)
 
         # --- 3b. ログエリア (右) ---
-        log_frame = ttk.LabelFrame(bottom_and_log_pane, text="ログ")
+        log_frame = ttk.LabelFrame(bottom_and_log_pane, text="通知メッセージ")
         bottom_and_log_pane.add(log_frame, weight=1) # weight=1で均等分割
 
         self.log_display = scrolledtext.ScrolledText(log_frame, height=10, wrap=tk.WORD, bg=self.LIGHT_BG, fg=self.TEXT_COLOR, font=("Consolas", 11), relief="flat", borderwidth=0, highlightthickness=0)
@@ -324,18 +326,19 @@ class Application(ttk.Frame):
         try:
             task_func(*args)
         except Exception as e:
-            print(f"\nスレッド処理中にエラーが発生しました: {e}")
+            self.q.put(("log", f"\nスレッド処理中にエラーが発生しました: {e}"))
             self.q.put(("task_complete", None))
         finally:
             sys.stdout = original_stdout
 
     def get_data_task(self):
         if self.selected_departments:
-            print(f"部署名「{', '.join(self.selected_departments)}」でフィルタリング中...")
+            self.q.put(("log", f"部署名「{', '.join(self.selected_departments)}」でフィルタリング中..."))
         else:
-            print("部署名フィルターは未選択です。")
-        print("Notionからデータ取得中...")
+            self.q.put(("log", "部署名フィルターは未選択です。"))
+        self.q.put(("log", "Notionからデータ取得中..."))
         data = notion_api.get_order_data_from_notion(department_names=self.selected_departments)
+        self.q.put(("log", f"-> {len(data)}件の要発注データが見つかりました。"))
         self.q.put(("update_data_ui", data))
 
     def pdf_creation_flow_task(self):
@@ -350,7 +353,7 @@ class Application(ttk.Frame):
             sender_info = {"name": sender_creds.get("display_name", account_key), "email": sender_creds["sender"]}
             selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
             
-            print(f"「{selected_supplier}」の注文書PDF作成準備中...")
+            self.q.put(("log", f"「{selected_supplier}」の注文書PDFを作成しています..."))
             items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
             if not items: return self.q.put(("task_complete", None))
 
@@ -372,7 +375,7 @@ class Application(ttk.Frame):
         sender_creds = self.accounts[account_key]
         display_name = sender_creds.get("display_name", account_key)
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
-        print(f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})...")
+        self.q.put(("log", f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})..."))
         items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
         success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds, display_name)
         if success:
@@ -399,7 +402,6 @@ class Application(ttk.Frame):
         except Exception as e:
             error_message = f"UI更新中に致命的なエラーが発生しました: {e}"
             self.log(error_message, "emphasis")
-            print(error_message)
             import traceback
             traceback.print_exc()
             self.processing = False
@@ -422,9 +424,9 @@ class Application(ttk.Frame):
         if not data:
             self.log("-> 発注対象のデータは見つかりませんでした。")
         else:
-            self.log("-> データ取得完了！", "emphasis")
-            self.log("   「仕入先を選択」リストから、メールを送信したい仕入先をクリックしてください。", "emphasis")
-            self.log("   選択すると、自動的に注文書PDFが作成され、プレビューが表示されます。")
+            
+            self.log("▼仕入先を選択してください", "emphasis")
+            self.log("リストから仕入先をクリックすると、注文書PDFが自動で作成・表示されます。", "emphasis")
             self.log("")
         self.q.put(("task_complete", None))
 
@@ -433,12 +435,10 @@ class Application(ttk.Frame):
         self.current_pdf_path = pdf_path
         self.to_var.set(info.get("email", "")); self.cc_var.set(info.get("email_cc", "")); self.contact_var.set(info.get("sales_contact", ""))
         self.pdf_var.set(os.path.basename(pdf_path) if pdf_path else "作成失敗")
-        log_message = """-> プレビューの準備ができました。
-
-   宛先、担当者、PDFの内容を必ず確認してください。
-   (PDFファイル名をクリックすると内容を開けます)
-
--> 内容を確認し、問題がなければ「メール送信」ボタンをクリックしてください！"""
+        log_message = """▼プレビューを確認してください
+宛先、担当者、PDFの内容は正しいですか？
+(ファイル名をクリックするとPDFを開けます)
+-> 問題がなければ「メール送信」ボタンをクリックしてください。"""
         self.log(log_message, "emphasis")
         if pdf_path: self.send_mail_button.config(state="normal")
         self.q.put(("task_complete", None))

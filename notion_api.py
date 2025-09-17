@@ -49,7 +49,6 @@ def get_order_data_from_notion(department_names=None):
     部署名によるフィルタリング機能を追加。
     """
     if not all([config.NOTION_API_TOKEN, config.PAGE_ID_CONTAINING_DB, config.NOTION_SUPPLIER_DATABASE_ID]):
-        print("エラー: Notion関連のIDまたはトークンが.envファイルに設定されていません。")
         return None
 
     notion = Client(auth=config.NOTION_API_TOKEN)
@@ -57,9 +56,7 @@ def get_order_data_from_notion(department_names=None):
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             # 1. 仕入先DB取得と注文DB取得を並列で実行
-            print("仕入先と注文データを並行して取得中...")
-            
-            # 仕入先DB取得をサブミット
+            # (内部処理のログは削除)
             future_suppliers = executor.submit(_get_all_pages_from_db, notion, config.NOTION_SUPPLIER_DATABASE_ID)
             
             # --- フィルター条件の構築 ---
@@ -98,34 +95,34 @@ def get_order_data_from_notion(department_names=None):
             # 両方の処理が終わるのを待って結果を取得
             all_suppliers = future_suppliers.result()
             order_pages = future_orders.result()
-            print("-> データ取得完了。")
+            # (内部処理のログは削除)
 
         # 取得したデータを後処理
         suppliers_map = {page['id']: page['properties'] for page in all_suppliers}
-        print(f"-> {len(suppliers_map)}件の仕入先データをマッピングしました。")
+        # (内部処理のログは削除)
         total_orders = len(order_pages)
         
         if total_orders == 0:
-            print("-> 要発注データは見つかりませんでした。")
+            # (内部処理のログは削除)
             return []
             
-        print(f"-> {total_orders}件の要発注データが見つかりました。")
+        # (内部処理のログは削除)
 
         # 3. 取得した注文データと仕入先データを結合
-        print("データ処理中...")
+        # (内部処理のログは削除)
         for i, page in enumerate(order_pages):
             props = page.get("properties", {})
             
             supplier_relation = props.get("DB_仕入先リスト", {}).get("relation", [])
             if not supplier_relation:
-                print(f"\n警告: 注文データ {page.get('id')} に関連する仕入先がありません。スキップします。")
+                # (内部処理のログは削除)
                 continue
             
             supplier_page_id = supplier_relation[0].get("id")
             supplier_props = suppliers_map.get(supplier_page_id)
 
             if not supplier_props:
-                print(f"\n警告: 関連する仕入先(ID: {supplier_page_id})の情報が見つかりません。スキップします。")
+                # (内部処理のログは削除)
                 continue
 
             # ヘルパー関数を使って安全にデータを抽出
@@ -139,12 +136,12 @@ def get_order_data_from_notion(department_names=None):
                 "email": _get_safe_email(supplier_props.get("メール")),
                 "email_cc": _get_safe_email(supplier_props.get("メール CC:")),
             })
-            print(f"({i + 1}/{total_orders} 件完了)", end="\r")
+            # (内部処理のログは削除)
         
-        print("\nデータ処理が完了しました。")
+        # (内部処理のログは削除)
 
     except Exception as e:
-        print(f"\nNotionデータベースの処理中にエラーが発生しました: {e}")
+        pass
         
     return order_list
 
@@ -153,7 +150,7 @@ def update_notion_pages(page_ids):
     if not page_ids:
         return
         
-    print(f"{len(page_ids)}件のNotionページの「発注日」を更新中...")
+    # print(f"{len(page_ids)}件のNotionページの「発注日」を更新中...") // app_gui.pyでログ出力
     notion = Client(auth=config.NOTION_API_TOKEN)
     today = datetime.now().strftime("%Y-%m-%d")
     
@@ -163,9 +160,10 @@ def update_notion_pages(page_ids):
                 page_id=page_id,
                 properties={"発注日": {"date": {"start": today}}}
             )
-            print(f"({i+1}/{len(page_ids)}) {page_id} の更新完了")
+            # print(f"({i+1}/{len(page_ids)}) {page_id} の更新完了") // app_gui.pyでログ出力
             time.sleep(0.35)
         except Exception as e:
-            print(f"エラー: {page_id} の更新に失敗しました. {e}")
+            # print(f"エラー: {page_id} の更新に失敗しました. {e}") // app_gui.pyでエラーハンドリング
+            pass # app_gui.pyでエラーハンドリング
             
-    print("Notionページの更新が完了しました。")
+    # print("Notionページの更新が完了しました。")
