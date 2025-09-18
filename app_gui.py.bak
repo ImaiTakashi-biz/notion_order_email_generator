@@ -147,24 +147,24 @@ class Application(ttk.Frame):
         # --- 1. 上段: アクションとアカウント ---
         top_pane = ttk.Frame(main_container)
         top_pane.grid(row=0, column=0, sticky="ew", pady=(0, 15))
-        
-        # --- 左側のアクションエリア ---
-        left_action_area = ttk.Frame(top_pane)
-        left_action_area.pack(side=tk.LEFT, anchor='n', fill=tk.X, expand=True)
 
         # --- 1a. データ取得ボタン ---
-        action_frame = ttk.Frame(left_action_area)
-        action_frame.pack(fill=tk.X, pady=(0, 10))
+        action_frame = ttk.Frame(top_pane)
+        action_frame.pack(fill=tk.X, pady=(0, 10), anchor='w') # anchor 'w' to align left
 
         self.get_data_button = ttk.Button(action_frame, text="Notionからデータを取得", command=self.start_data_retrieval, style="Primary.TButton")
         self.get_data_button.pack(side=tk.LEFT, ipady=5)
 
         self.spinner_label = ttk.Label(action_frame, textvariable=self.spinner_var, font=("Yu Gothic UI", 16), foreground=self.ACCENT_COLOR)
 
+        # --- フィルターとアカウントを並べて表示するコンテナ ---
+        sub_pane = ttk.Frame(top_pane)
+        sub_pane.pack(fill=tk.X, expand=True)
+
         # --- 1b. 部署名フィルター (強調表示) ---
         # LabelFrameの代わりにFrameとLabelで模倣する
-        department_container = ttk.Frame(left_action_area, style="Highlight.TFrame", relief="solid", borderwidth=1, padding=(0, 5))
-        department_container.pack(fill=tk.X, pady=(5,0))
+        department_container = ttk.Frame(sub_pane, style="Highlight.TFrame", relief="solid", borderwidth=1, padding=(0, 5))
+        department_container.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=(5,0)) # Fills available space
 
         # タイトルラベル
         title_label = ttk.Label(department_container, text="部署名フィルター", font=("Yu Gothic UI", 12, "bold"), foreground=self.PRIMARY_COLOR, background="#EAF2F8") # フォントサイズを12に戻す
@@ -183,8 +183,8 @@ class Application(ttk.Frame):
             cb.grid(row=0, column=i, padx=(5, 15), pady=(0,5), sticky='w')
 
         # --- 右側のアカウント選択 ---
-        account_frame = ttk.LabelFrame(top_pane, text="送信者アカウント")
-        account_frame.pack(side=tk.RIGHT, anchor='n', padx=(20, 0))
+        account_frame = ttk.LabelFrame(sub_pane, text="送信者アカウント")
+        account_frame.pack(side=tk.LEFT, anchor='n', padx=(20, 0)) # Changed to LEFT to be next to the other
         
         account_display_names = sorted(list(self.display_name_to_key_map.keys()))
         self.account_selector = ttk.Combobox(account_frame, textvariable=self.selected_account_display_name, values=account_display_names, state="readonly", width=25, font=("Yu Gothic UI", 10))

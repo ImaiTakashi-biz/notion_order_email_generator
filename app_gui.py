@@ -103,7 +103,7 @@ class Application(ttk.Frame):
         # PDFリンク用のスタイル
         style.configure("PdfLink.TLabel", background=self.LIGHT_BG, foreground=self.ACCENT_COLOR, font=("Yu Gothic UI", 9, "underline"))
         style.configure("TLabelFrame", background=self.BG_COLOR, bordercolor=self.BORDER_COLOR, relief="solid", borderwidth=1)
-        style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 13, "bold")) # フォントサイズを13に統一
+        style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 12, "bold")) # フォントサイズを12に統一
 
         style.configure("TButton", font=("Yu Gothic UI", 10, "bold"), borderwidth=0, padding=(15, 10))
         style.configure("Primary.TButton", background=self.PRIMARY_COLOR, foreground=self.HEADER_FG)
