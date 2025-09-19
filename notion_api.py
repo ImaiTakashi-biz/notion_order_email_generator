@@ -58,20 +58,11 @@ def get_order_data_from_notion(department_names=None):
             # 1. 仕入先DB取得と注文DB取得を並列で実行
             future_suppliers = executor.submit(_get_all_pages_from_db, notion, config.NOTION_SUPPLIER_DATABASE_ID)
             
-            # --- フィルター条件の構築（代替案） ---
-            # 「管理」の場合のAND条件
-            condition_a = {
-                "and": [
-                    {"property": "管理/管理外", "select": {"equals": "管理"}},
-                    {"property": "発注判定", "formula": {"string": {"contains": "要発注"}}}
-                ]
-            }
-            # 「管理外」の場合のAND条件
-            condition_b = {
-                "and": [
-                    {"property": "管理/管理外", "select": {"equals": "管理外"}},
-                    {"property": "管理外発注判定", "formula": {"string": {"contains": "要発注"}}}
-                ]
+            # --- フィルター条件の構築 ---
+            # ベースとなるフィルター（総合発注判定プロパティを利用）
+            base_filter = {
+                "property": "総合発注判定",
+                "formula": {"string": {"contains": "要発注"}}
             }
 
             # 部署名フィルターが指定されている場合の処理
@@ -80,19 +71,22 @@ def get_order_data_from_notion(department_names=None):
                     {"property": "部署名", "multi_select": {"contains": name}}
                     for name in department_names
                 ]
+                # 部署名フィルターが1つならそのまま、複数ならorで連結
                 if len(department_filters) == 1:
                     department_filter_condition = department_filters[0]
                 else:
                     department_filter_condition = {"or": department_filters}
-
-                # 各条件に部署名フィルターを追加
-                condition_a["and"].append(department_filter_condition)
-                condition_b["and"].append(department_filter_condition)
-                # 最終的なフィルターは、AとBのOR条件
-                final_filter = {"or": [condition_a, condition_b]}
+                
+                # 既存のフィルターとANDで結合
+                final_filter = {
+                    "and": [
+                        base_filter,
+                        department_filter_condition
+                    ]
+                }
             else:
-                # 部署名が指定されていなければ、AとBのOR条件のみ使用
-                final_filter = {"or": [condition_a, condition_b]}
+                # 部署名が指定されていなければ、既存のフィルターのみ使用
+                final_filter = base_filter
 
             # 注文DB取得をサブミット
             future_orders = executor.submit(_get_all_pages_from_db, notion, config.PAGE_ID_CONTAINING_DB, filter_params=final_filter)
