@@ -424,7 +424,12 @@ Notionからデータ取得中..."""))
             if not items: return self.q.put(("task_complete", None))
 
             sales_contact = items[0]["sales_contact"]
-            pdf_path = pdf_generator.create_order_pdf(selected_supplier, items, sales_contact, sender_info)
+            # 選択された部署名を取得
+            selected_department_for_pdf = None
+            if len(self.selected_departments) == 1:
+                selected_department_for_pdf = self.selected_departments[0]
+
+            pdf_path = pdf_generator.create_order_pdf(selected_supplier, items, sales_contact, sender_info, selected_department=selected_department_for_pdf)
 
             if pdf_path:
                 self.q.put(("update_preview_ui", (items[0], pdf_path)))

@@ -5,7 +5,7 @@ import win32com.client
 import config
 import traceback
 
-def create_order_pdf(supplier_name, items, sales_contact, sender_info):
+def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_department=None):
     """
     Excelテンプレートから注文書PDFを作成する (win32comのみ使用)。
     この関数はwin32comを使用するため、Windows環境とExcelのインストールが必要です。
@@ -43,9 +43,19 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info):
         safe_supplier_name = re.sub(r'[\\/:*?"<>|]', '_', supplier_name)
         pdf_filename = f"{timestamp}_{safe_supplier_name}_注文書.pdf"
         
-        if not os.path.exists(config.PDF_SAVE_DIR):
-            os.makedirs(config.PDF_SAVE_DIR)
-        pdf_path = os.path.join(config.PDF_SAVE_DIR, pdf_filename)
+        # 保存ディレクトリを決定
+        target_save_dir = config.PDF_SAVE_DIR
+        if selected_department:
+            department_dir = os.path.join(config.PDF_SAVE_DIR, selected_department)
+            if os.path.exists(department_dir) and os.path.isdir(department_dir):
+                target_save_dir = department_dir
+            else:
+                # 部署フォルダが存在しない場合は、デフォルトの保存先に保存
+                print(f"警告: 部署フォルダ '{department_dir}' が見つからないため、デフォルトの保存先に保存します。")
+
+        if not os.path.exists(target_save_dir):
+            os.makedirs(target_save_dir)
+        pdf_path = os.path.join(target_save_dir, pdf_filename)
         
         # 一時ファイルなしで直接PDFに変換
         ws.ExportAsFixedFormat(0, pdf_path)
