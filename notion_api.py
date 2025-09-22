@@ -60,7 +60,7 @@ def get_order_data_from_notion(department_names=None):
             future_suppliers = executor.submit(_get_all_pages_from_db, notion, config.NOTION_SUPPLIER_DATABASE_ID)
             
             base_filter = {
-                "property": "総合発注判定",
+                "property": "発注判定",
                 "formula": {"string": {"contains": "要発注"}}
             }
 
