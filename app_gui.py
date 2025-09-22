@@ -10,6 +10,7 @@ import config
 import notion_api
 import email_service
 import pdf_generator
+import settings_gui
 
 class QueueIO:
     def __init__(self, q):
@@ -109,6 +110,10 @@ class Application(ttk.Frame):
         style.configure("Primary.TButton", background=self.PRIMARY_COLOR, foreground=self.HEADER_FG)
         style.map("Primary.TButton", background=[("active", "#357ABD"), ("disabled", "#A9CCE3")])
         
+        # Secondary.TButton スタイルを追加
+        style.configure("Secondary.TButton", background=self.BORDER_COLOR, foreground=self.TEXT_COLOR)
+        style.map("Secondary.TButton", background=[("active", "#C0C0C0"), ("disabled", "#E0E0E0")])
+        
         style.configure("Treeview", background=self.LIGHT_BG, fieldbackground=self.LIGHT_BG, foreground=self.TEXT_COLOR, rowheight=28, font=("Yu Gothic UI", 10))
         style.map("Treeview", background=[("selected", self.SELECT_BG)], foreground=[("selected", self.SELECT_FG)])
         style.configure("Treeview.Heading", background="#6C757D", foreground=self.HEADER_FG, font=("Yu Gothic UI", 10, "bold"), padding=8)
@@ -154,6 +159,9 @@ class Application(ttk.Frame):
 
         self.get_data_button = ttk.Button(action_frame, text="Notionからデータを取得", command=self.start_data_retrieval, style="Primary.TButton")
         self.get_data_button.pack(side=tk.LEFT, ipady=5)
+
+        self.settings_button = ttk.Button(action_frame, text="🔧 設定", command=self.open_settings_window, style="Secondary.TButton")
+        self.settings_button.pack(side=tk.RIGHT, ipady=5, padx=10)
 
         self.spinner_label = ttk.Label(action_frame, textvariable=self.spinner_var, font=("Yu Gothic UI", 16), foreground=self.ACCENT_COLOR)
 
@@ -348,16 +356,6 @@ class Application(ttk.Frame):
             return
 
         self.selected_departments = [name for name, var in self.department_vars.items() if var.get()]
-
-        # 選択された部署名に基づいて送信者アカウントを更新
-        if self.selected_departments and self.department_defaults:
-            for dep_name in self.selected_departments:
-                if dep_name in self.department_defaults:
-                    default_account_key = self.department_defaults[dep_name]
-                    if default_account_key in self.accounts:
-                        default_display_name = self.accounts[default_account_key].get("display_name", default_account_key)
-                        self.selected_account_display_name.set(default_display_name)
-                        break # 最初に見つかった部署のデフォルトアカウントを適用
 
         self.processing = True; self.toggle_buttons(False); self.clear_displays()
         self.start_spinner()
@@ -598,6 +596,32 @@ Notionからデータ取得中..."""))
                 )
         else:
             messagebox.showwarning("ファイルなし", "PDFファイルが見つかりません。")
+
+    def open_settings_window(self):
+        settings_win = settings_gui.SettingsWindow(self.master)
+        self.master.wait_window(settings_win) # 設定画面が閉じるまで待つ
+
+        # 設定が変更された可能性があるので、configをリロードし、UIを更新する
+        import importlib
+        importlib.reload(config)
+        self.reload_ui_after_settings_change()
+
+    def reload_ui_after_settings_change(self):
+        """設定変更後にUI（特にアカウント関連）をリフレッシュする"""
+        self.log("設定をリロードしました。")
+        self.accounts = config.load_email_accounts()
+        self.department_defaults = config.load_department_defaults()
+        self.display_name_to_key_map = {v.get('display_name', k): k for k, v in self.accounts.items()}
+        
+        account_display_names = sorted(list(self.display_name_to_key_map.keys()))
+        self.account_selector['values'] = account_display_names
+
+        # TODO: 部署チェックボックスも動的に再生成する必要があるが、
+        # UIが複雑になるため、今回はアカウントの更新のみに留める。
+        # 現状では、部署名の変更を反映するにはアプリの再起動が必要。
+
+        # デフォルトアカウントを再設定
+        self.set_default_sender_account()
 
     def on_closing(self):
         if self.processing: return messagebox.showwarning("処理中", "処理が実行中です。終了できません。")

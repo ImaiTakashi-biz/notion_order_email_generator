@@ -54,3 +54,15 @@ def load_departments():
     読み込まれた設定から部署のリストを返します。
     """
     return _settings.get("departments", [])
+
+
+def save_settings(json_data):
+    """GUIから受け取った設定をJSONファイルに保存する"""
+    try:
+        # JSON ファイルの保存
+        with open("email_accounts.json", 'w', encoding='utf-8') as f:
+            json.dump(json_data, f, indent=2, ensure_ascii=False)
+        
+        return True, "設定を保存しました。"
+    except Exception as e:
+        return False, f"設定の保存中にエラーが発生しました: {e}"
