@@ -65,5 +65,3 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info):
         if excel:
             excel.Quit()
         # 念のためCOMオブジェクトの参照を解放
-        del workbook
-        del excel

@@ -170,7 +170,7 @@ class Application(ttk.Frame):
         title_label = ttk.Label(department_container, text="部署名フィルター", font=("Yu Gothic UI", 12, "bold"), foreground=self.PRIMARY_COLOR, background="#EAF2F8") # フォントサイズを12に戻す
         title_label.pack(anchor="w", padx=10, pady=(0, 2))
 
-        departments = ["生産部", "品質保証部", "営業部", "総務部"]
+        departments = config.load_departments()
         self.department_vars = {name: tk.BooleanVar() for name in departments}
         
         # チェックボックスを配置する内部フレーム
@@ -358,9 +358,6 @@ class Application(ttk.Frame):
                         default_display_name = self.accounts[default_account_key].get("display_name", default_account_key)
                         self.selected_account_display_name.set(default_display_name)
                         break # 最初に見つかった部署のデフォルトアカウントを適用
-        else:
-            # 部署が選択されていない場合、またはdepartment_defaultsがない場合、既存のデフォルト設定を維持
-            pass # 何もしないか、必要に応じてフォールバックロジックを追加
 
         self.processing = True; self.toggle_buttons(False); self.clear_displays()
         self.start_spinner()

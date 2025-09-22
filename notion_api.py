@@ -125,7 +125,7 @@ def update_notion_pages(page_ids):
     notion = Client(auth=config.NOTION_API_TOKEN)
     today = datetime.now().strftime("%Y-%m-%d")
     
-    for i, page_id in enumerate(page_ids):
+    for page_id in page_ids:
         try:
             notion.pages.update(
                 page_id=page_id,

@@ -48,3 +48,9 @@ def load_department_defaults():
     読み込まれた設定から部署ごとのデフォルトアカウント情報を返します。
     """
     return _settings.get("department_defaults", {})
+
+def load_departments():
+    """
+    読み込まれた設定から部署のリストを返します。
+    """
+    return _settings.get("departments", [])
