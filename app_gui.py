@@ -405,7 +405,7 @@ Notionからデータ取得中..."""))
         else:
             self.q.put(("log", "部署名フィルターは未選択です。\nNotionからデータ取得中..."))
         data = notion_api.get_order_data_from_notion(department_names=self.selected_departments)
-        self.q.put(("log", f"✅ 完了 ({len(data)}件の要発注データが見つかりました)"))
+        self.q.put(("log", f"✅ 完了 ({len(data['orders'])}件の要発注データが見つかりました)"))
         self.q.put(("update_data_ui", data))
 
     def pdf_creation_flow_task(self):
@@ -492,11 +492,21 @@ Notionからデータ取得中..."""))
         self.log_display.see(tk.END)
         self.log_display.config(state="disabled")
 
-    def update_data_ui(self, data):
-        self.order_data = data; self.sent_suppliers.clear()
+    def update_data_ui(self, data_payload):
+        orders = data_payload.get("orders", [])
+        unlinked_count = data_payload.get("unlinked_count", 0)
+
+        self.order_data = orders
+        self.sent_suppliers.clear()
         self.tree.delete(*self.tree.get_children())
-        self.update_supplier_list(data)
-        if not data:
+        self.update_supplier_list(orders)
+
+        if unlinked_count > 0:
+            self.log("", None) # 空行
+            warning_msg = f"⚠️ 警告: 仕入先が未設定の「要発注」データが{unlinked_count}件見つかりました。\n       これらのデータはリストに表示されていません。\n       Notionで「DB_仕入先リスト」を設定してください。"
+            self.log(warning_msg, "error")
+
+        if not orders:
             self.log("-> 発注対象のデータは見つかりませんでした。")
         else:
             self.log("")
@@ -570,7 +580,7 @@ Notionからデータ取得中..."""))
         suppliers = sorted(list(set(i["supplier_name"] for i in data)))
         for s in suppliers: self.supplier_listbox.insert(tk.END, s)
 
-    def clear_displays(self, event=None): 
+    def clear_displays(self): 
         self.tree.delete(*self.tree.get_children()); self.supplier_listbox.delete(0, tk.END); self.sent_suppliers.clear(); self.clear_preview()
         self.log_display.config(state="normal"); self.log_display.delete(1.0, tk.END); self.log_display.config(state="disabled")
 

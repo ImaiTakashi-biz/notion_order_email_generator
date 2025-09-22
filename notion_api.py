@@ -47,76 +47,58 @@ def get_order_data_from_notion(department_names=None):
     """
     Notionから「要発注」ステータスの注文データを効率的に取得する。
     部署名によるフィルタリング機能を追加。
+    仕入先がリンクされていない項目をカウントして返す。
     """
     if not all([config.NOTION_API_TOKEN, config.PAGE_ID_CONTAINING_DB, config.NOTION_SUPPLIER_DATABASE_ID]):
-        return None
+        return {"orders": [], "unlinked_count": 0}
 
     notion = Client(auth=config.NOTION_API_TOKEN)
     order_list = []
+    unlinked_count = 0
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            # 1. 仕入先DB取得と注文DB取得を並列で実行
             future_suppliers = executor.submit(_get_all_pages_from_db, notion, config.NOTION_SUPPLIER_DATABASE_ID)
             
-            # --- フィルター条件の構築 ---
-            # ベースとなるフィルター（総合発注判定プロパティを利用）
             base_filter = {
                 "property": "総合発注判定",
                 "formula": {"string": {"contains": "要発注"}}
             }
 
-            # 部署名フィルターが指定されている場合の処理
             if department_names:
                 department_filters = [
                     {"property": "部署名", "multi_select": {"contains": name}}
                     for name in department_names
                 ]
-                # 部署名フィルターが1つならそのまま、複数ならorで連結
-                if len(department_filters) == 1:
-                    department_filter_condition = department_filters[0]
-                else:
-                    department_filter_condition = {"or": department_filters}
-                
-                # 既存のフィルターとANDで結合
-                final_filter = {
-                    "and": [
-                        base_filter,
-                        department_filter_condition
-                    ]
-                }
+                department_filter_condition = department_filters[0] if len(department_filters) == 1 else {"or": department_filters}
+                final_filter = {"and": [base_filter, department_filter_condition]}
             else:
-                # 部署名が指定されていなければ、既存のフィルターのみ使用
                 final_filter = base_filter
 
-            # 注文DB取得をサブミット
             future_orders = executor.submit(_get_all_pages_from_db, notion, config.PAGE_ID_CONTAINING_DB, filter_params=final_filter)
 
-            # 両方の処理が終わるのを待って結果を取得
             all_suppliers = future_suppliers.result()
             order_pages = future_orders.result()
 
-        # 取得したデータを後処理
         suppliers_map = {page['id']: page['properties'] for page in all_suppliers}
-        total_orders = len(order_pages)
         
-        if total_orders == 0:
-            return []
+        if not order_pages:
+            return {"orders": [], "unlinked_count": 0}
 
-        # 3. 取得した注文データと仕入先データを結合
-        for i, page in enumerate(order_pages):
+        for page in order_pages:
             props = page.get("properties", {})
             
             supplier_relation = props.get("DB_仕入先リスト", {}).get("relation", [])
             if not supplier_relation:
+                unlinked_count += 1
                 continue
             
             supplier_page_id = supplier_relation[0].get("id")
             supplier_props = suppliers_map.get(supplier_page_id)
 
             if not supplier_props:
+                unlinked_count += 1
                 continue
 
-            # ヘルパー関数を使って安全にデータを抽出
             order_list.append({
                 "page_id": page["id"],
                 "maker_name": _get_safe_text(props.get("メーカー名", {}).get("rich_text")),
@@ -129,9 +111,11 @@ def get_order_data_from_notion(department_names=None):
             })
         
     except Exception as e:
-        pass
+        print(f"Notion APIエラー (データ取得): {e}")
+        # エラーが発生した場合も、空の状態で返す
+        return {"orders": [], "unlinked_count": 0}
         
-    return order_list
+    return {"orders": order_list, "unlinked_count": unlinked_count}
 
 def update_notion_pages(page_ids):
     """指定されたNotionページのリストの「発注日」を今日の日付に更新する"""
@@ -149,4 +133,4 @@ def update_notion_pages(page_ids):
             )
             time.sleep(0.35)
         except Exception as e:
-            pass # app_gui.pyでエラーハンドリング
+            print(f"Notion APIエラー (ページ更新): {e}") # app_gui.pyでエラーハンドリング
