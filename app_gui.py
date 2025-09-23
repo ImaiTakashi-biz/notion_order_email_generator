@@ -28,6 +28,7 @@ class Application(ttk.Frame):
         self.queue_io = QueueIO(self.q)
         self.processing = False
         self.order_data = []
+        self.orders_by_supplier = {}
         self.current_pdf_path = None
         self.sent_suppliers = set()
         self.department_vars = {}
@@ -421,7 +422,7 @@ Notionからデータ取得中..."""))
             self.q.put(("log", "STEP 4: 注文書PDFの作成"))
             self.q.put(("log", "----------------------------------------"))
             self.q.put(("log", f"「{selected_supplier}」の注文書を作成しています..."))
-            items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
+            items = self.orders_by_supplier.get(selected_supplier, [])
             if not items: return self.q.put(("task_complete", None))
 
             sales_contact = items[0]["sales_contact"]
@@ -448,7 +449,7 @@ Notionからデータ取得中..."""))
         display_name = sender_creds.get("display_name", account_key)
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
         self.q.put(("log", f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})..."))
-        items = [item for item in self.order_data if item["supplier_name"] == selected_supplier]
+        items = self.orders_by_supplier.get(selected_supplier, [])
         success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds, display_name)
         if success:
             page_ids_to_update = [item['page_id'] for item in items]
@@ -497,6 +498,12 @@ Notionからデータ取得中..."""))
         unlinked_count = data_payload.get("unlinked_count", 0)
 
         self.order_data = orders
+        # 仕入先ごとに事前グルーピング
+        from collections import defaultdict
+        grouped = defaultdict(list)
+        for order in orders:
+            grouped[order.get("supplier_name", "")] .append(order)
+        self.orders_by_supplier = dict(grouped)
         self.sent_suppliers.clear()
         self.tree.delete(*self.tree.get_children())
         self.update_supplier_list(orders)
@@ -571,7 +578,7 @@ Notionからデータ取得中..."""))
 
     def update_table_for_supplier(self, supplier_name):
         self.tree.delete(*self.tree.get_children())
-        items_to_display = [item for item in self.order_data if item["supplier_name"] == supplier_name]
+        items_to_display = self.orders_by_supplier.get(supplier_name, [])
         for item in items_to_display:
             self.tree.insert("", tk.END, values=(item.get("maker_name", ""), item.get("db_part_number", ""), item.get("quantity", 0)))
 

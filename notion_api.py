@@ -24,7 +24,7 @@ def _get_safe_number(prop):
 def _get_all_pages_from_db(notion_client, database_id, filter_params=None):
     """
     指定されたデータベースからすべてのページを取得する（ページネーション対応）。
-    オプションでフィルターを適用可能。
+    オプションでフィルターを適用可能。簡易リトライ付き。
     """
     all_results = []
     next_cursor = None
@@ -36,7 +36,17 @@ def _get_all_pages_from_db(notion_client, database_id, filter_params=None):
         if filter_params:
             query_args["filter"] = filter_params
 
-        query_res = notion_client.databases.query(**query_args)
+        query_res = None
+        for attempt in range(3):
+            try:
+                query_res = notion_client.databases.query(**query_args)
+                break
+            except Exception:
+                if attempt == 2:
+                    # 最終試行で失敗したら部分結果を返す
+                    return all_results
+                time.sleep(config.AppConstants.NOTION_API_DELAY * (attempt + 1))
+
         all_results.extend(query_res.get("results", []))
         if not query_res.get("has_more"):
             break
@@ -99,15 +109,23 @@ def get_order_data_from_notion(department_names=None):
                 unlinked_count += 1
                 continue
 
+            maker = _get_safe_text(props.get("メーカー名", {}).get("rich_text")).strip()
+            part_number = _get_safe_text(props.get("DB品番", {}).get("rich_text")).strip()
+            quantity = int(_get_safe_number(props.get("数量")) or 0)
+            supplier_name = _get_safe_text(supplier_props.get("購入先", {}).get("title")).strip()
+            sales_contact = _get_safe_text(supplier_props.get("営業担当", {}).get("rich_text")).strip()
+            email_to = (_get_safe_email(supplier_props.get("メール")) or "").strip()
+            email_cc = (_get_safe_email(supplier_props.get("メール CC:")) or "").strip()
+
             order_list.append({
                 "page_id": page["id"],
-                "maker_name": _get_safe_text(props.get("メーカー名", {}).get("rich_text")),
-                "db_part_number": _get_safe_text(props.get("DB品番", {}).get("rich_text")),
-                "quantity": _get_safe_number(props.get("数量")),
-                "supplier_name": _get_safe_text(supplier_props.get("購入先", {}).get("title")),
-                "sales_contact": _get_safe_text(supplier_props.get("営業担当", {}).get("rich_text")),
-                "email": _get_safe_email(supplier_props.get("メール")),
-                "email_cc": _get_safe_email(supplier_props.get("メール CC:")),
+                "maker_name": maker,
+                "db_part_number": part_number,
+                "quantity": quantity,
+                "supplier_name": supplier_name,
+                "sales_contact": sales_contact,
+                "email": email_to,
+                "email_cc": email_cc,
             })
         
     except Exception as e:
