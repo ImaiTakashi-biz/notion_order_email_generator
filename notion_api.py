@@ -111,7 +111,6 @@ def get_order_data_from_notion(department_names=None):
             })
         
     except Exception as e:
-        print(f"Notion APIエラー (データ取得): {e}")
         # エラーが発生した場合も、空の状態で返す
         return {"orders": [], "unlinked_count": 0}
         
@@ -131,6 +130,6 @@ def update_notion_pages(page_ids):
                 page_id=page_id,
                 properties={"発注日": {"date": {"start": today}}}
             )
-            time.sleep(0.35)
+            time.sleep(config.AppConstants.NOTION_API_DELAY)
         except Exception as e:
-            print(f"Notion APIエラー (ページ更新): {e}") # app_gui.pyでエラーハンドリング
+            pass  # app_gui.pyでエラーハンドリング

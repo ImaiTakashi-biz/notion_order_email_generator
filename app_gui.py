@@ -291,7 +291,7 @@ class Application(ttk.Frame):
         if not self.spinner_running: return
         self.spinner_var.set(f"Loading {self.spinner_frames[self.spinner_index]}")
         self.spinner_index = (self.spinner_index + 1) % len(self.spinner_frames)
-        self._after_id = self.master.after(80, self.animate_spinner)
+        self._after_id = self.master.after(config.AppConstants.SPINNER_ANIMATION_DELAY, self.animate_spinner)
 
     def set_default_sender_account(self):
         if not self.accounts:
@@ -301,10 +301,10 @@ class Application(ttk.Frame):
         # 部署名フィルターが選択されている場合、それに基づいてデフォルトアカウントを設定
         if self.department_defaults and self.department_vars:
             # 現在選択されている部署名を取得
-            selected_departments_on_init = [name for name, var in self.department_vars.items() if var.get()]
-            if selected_departments_on_init:
+            selected_departments = [name for name, var in self.department_vars.items() if var.get()]
+            if selected_departments:
                 # 最初の選択された部署名に対応するデフォルトアカウントを探す
-                for dep_name in selected_departments_on_init:
+                for dep_name in selected_departments:
                     if dep_name in self.department_defaults:
                         default_account_key = self.department_defaults[dep_name]
                         break
@@ -360,7 +360,7 @@ class Application(ttk.Frame):
         self.processing = True; self.toggle_buttons(False); self.clear_displays()
         self.start_spinner()
         threading.Thread(target=self.run_thread, args=(self.get_data_task,)).start()
-        self.master.after(100, self.check_queue)
+        self.master.after(config.AppConstants.QUEUE_CHECK_INTERVAL, self.check_queue)
 
     def on_supplier_select(self, event=None):
         if self.processing or not self.supplier_listbox.curselection(): return
@@ -370,7 +370,7 @@ class Application(ttk.Frame):
         self.start_spinner()
         self.update_table_for_supplier(selected_supplier)
         threading.Thread(target=self.run_thread, args=(self.pdf_creation_flow_task,)).start()
-        self.master.after(100, self.check_queue)
+        self.master.after(config.AppConstants.QUEUE_CHECK_INTERVAL, self.check_queue)
 
     def send_single_mail(self):
         if self.processing or not self.current_pdf_path: return
@@ -378,10 +378,11 @@ class Application(ttk.Frame):
         self.processing = True; self.toggle_buttons(False)
         self.start_spinner()
         threading.Thread(target=self.run_thread, args=(self.send_mail_task,)).start()
-        self.master.after(100, self.check_queue)
+        self.master.after(config.AppConstants.QUEUE_CHECK_INTERVAL, self.check_queue)
 
     def run_thread(self, task_func, *args):
-        original_stdout = sys.stdout; sys.stdout = self.queue_io
+        original_stdout = sys.stdout
+        sys.stdout = self.queue_io
         try:
             task_func(*args)
         except Exception as e:
@@ -473,15 +474,14 @@ Notionからデータ取得中..."""))
                     self.toggle_buttons(True)
                     self.stop_spinner()
         except queue.Empty: 
-            self.master.after(100, self.check_queue)
+            self.master.after(config.AppConstants.QUEUE_CHECK_INTERVAL, self.check_queue)
         except Exception as e:
             error_message = f"UI更新中に致命的なエラーが発生しました: {e}"
             self.q.put(("log", error_message, "error"))
-            import traceback
-            traceback.print_exc()
             self.processing = False
             self.toggle_buttons(True)
-            self.master.after(100, self.check_queue)
+            self.stop_spinner()
+            self.master.after(config.AppConstants.QUEUE_CHECK_INTERVAL, self.check_queue)
 
     def log(self, message, tag=None):
         self.log_display.config(state="normal")
@@ -621,9 +621,7 @@ Notionからデータ取得中..."""))
         account_display_names = sorted(list(self.display_name_to_key_map.keys()))
         self.account_selector['values'] = account_display_names
 
-        # TODO: 部署チェックボックスも動的に再生成する必要があるが、
-        # UIが複雑になるため、今回はアカウントの更新のみに留める。
-        # 現状では、部署名の変更を反映するにはアプリの再起動が必要。
+        # 部署名の変更を反映するにはアプリの再起動が必要
 
         # デフォルトアカウントを再設定
         self.set_default_sender_account()

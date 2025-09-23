@@ -15,23 +15,26 @@ def send_smtp_mail(info, pdf_path, sender_creds, account_name):
         msg["To"] = info["email"]
         if info["email_cc"]:
             msg["Cc"] = info["email_cc"]
-        msg["Subject"] = "注文書送付の件"
+        template = config.AppConstants.EMAIL_TEMPLATE
+        company = config.AppConstants.COMPANY_INFO
+        
+        msg["Subject"] = template['subject']
 
         # メール本文 (署名を動的に生成)
         body = f"""{info['supplier_name']}
 {info.get('sales_contact', 'ご担当者')} 様
 
-いつも大変お世話になります。
-添付の通り注文宜しくお願い致します。
+{template['greeting']}
+{template['body']}
 
 ∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝
-株式会社 新井精密
+{company['name']}
 発注担当： {account_name}
-〒368-0061
-埼玉県秩父市小柱670番地
+{company['postal_code']}
+{company['address']}
 Email: {sender_creds["sender"]}
-TEL: 0494-26-7786
-FAX: 0494-26-7787
+{company['tel']}
+{company['fax']}
 ∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝"""
         msg.attach(MIMEText(body, 'plain'))
 
@@ -50,5 +53,4 @@ FAX: 0494-26-7787
             
         return True
     except Exception as e:
-        print(f"メール送信エラー: {e}")
         return False

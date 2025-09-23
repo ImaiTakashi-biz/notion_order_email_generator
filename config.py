@@ -9,13 +9,11 @@ load_dotenv()
 def _load_settings_from_json(file_path="email_accounts.json"):
     """設定ファイル(JSON)を読み込む内部関数"""
     if not os.path.exists(file_path):
-        print(f"警告: 設定ファイルが見つかりません: {file_path}")
         return {}
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        print(f"設定ファイルの読み込み中にエラーが発生しました: {e}")
         return {}
 
 # 起動時に一度だけ設定を読み込む
@@ -36,6 +34,40 @@ SMTP_PORT = int(_settings.get("smtp_port", 587))
 EXCEL_TEMPLATE_PATH = os.getenv("EXCEL_TEMPLATE_PATH")
 PDF_SAVE_DIR = os.getenv("PDF_SAVE_DIR")
 
+# アプリケーション定数
+class AppConstants:
+    # UI関連
+    SPINNER_ANIMATION_DELAY = 80  # ミリ秒
+    QUEUE_CHECK_INTERVAL = 100    # ミリ秒
+    
+    # Notion API関連
+    NOTION_API_DELAY = 0.35       # 秒
+    
+    # Excel関連
+    EXCEL_CELLS = {
+        'SUPPLIER_NAME': 'A5',
+        'SALES_CONTACT': 'A7', 
+        'SENDER_NAME': 'D8',
+        'SENDER_EMAIL': 'D14',
+        'ITEM_START_ROW': 16
+    }
+    
+    # 会社情報
+    COMPANY_INFO = {
+        'name': '株式会社 新井精密',
+        'postal_code': '〒368-0061',
+        'address': '埼玉県秩父市小柱670番地',
+        'tel': 'TEL: 0494-26-7786',
+        'fax': 'FAX: 0494-26-7787'
+    }
+    
+    # メールテンプレート
+    EMAIL_TEMPLATE = {
+        'subject': '注文書送付の件',
+        'greeting': 'いつも大変お世話になります。',
+        'body': '添付の通り注文宜しくお願い致します。'
+    }
+
 # メールアカウント情報 (JSONから)
 def load_email_accounts():
     """
@@ -55,6 +87,40 @@ def load_departments():
     """
     return _settings.get("departments", [])
 
+
+def validate_config():
+    """設定値の妥当性を検証する"""
+    errors = []
+    
+    # 必須環境変数のチェック
+    required_env_vars = {
+        "NOTION_API_TOKEN": NOTION_API_TOKEN,
+        "NOTION_DATABASE_ID": PAGE_ID_CONTAINING_DB,
+        "NOTION_SUPPLIER_DATABASE_ID": NOTION_SUPPLIER_DATABASE_ID,
+        "EXCEL_TEMPLATE_PATH": EXCEL_TEMPLATE_PATH,
+        "PDF_SAVE_DIR": PDF_SAVE_DIR
+    }
+    
+    for var_name, var_value in required_env_vars.items():
+        if not var_value:
+            errors.append(f"環境変数 {var_name} が設定されていません")
+    
+    # ファイル存在チェック
+    if EXCEL_TEMPLATE_PATH and not os.path.exists(EXCEL_TEMPLATE_PATH):
+        errors.append(f"Excelテンプレートファイルが見つかりません: {EXCEL_TEMPLATE_PATH}")
+    
+    if PDF_SAVE_DIR and not os.path.exists(PDF_SAVE_DIR):
+        try:
+            os.makedirs(PDF_SAVE_DIR, exist_ok=True)
+        except Exception as e:
+            errors.append(f"PDF保存ディレクトリを作成できません: {PDF_SAVE_DIR} - {e}")
+    
+    # アカウント設定のチェック
+    accounts = load_email_accounts()
+    if not accounts:
+        errors.append("メールアカウントが設定されていません")
+    
+    return len(errors) == 0, errors
 
 def save_settings(json_data):
     """GUIから受け取った設定をJSONファイルに保存する"""

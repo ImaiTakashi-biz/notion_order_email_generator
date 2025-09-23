@@ -3,7 +3,6 @@ import re
 from datetime import datetime
 import win32com.client
 import config
-import traceback
 
 def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_department=None):
     """
@@ -28,15 +27,17 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         workbook = excel.Workbooks.Open(os.path.abspath(config.EXCEL_TEMPLATE_PATH))
         ws = workbook.ActiveSheet
 
-        ws.Range("A5").Value = f"{supplier_name} 御中"
-        ws.Range("A7").Value = f"{sales_contact} 様"
-        ws.Range("D8").Value = f"担当：{sender_info['name']}"
-        ws.Range("D14").Value = sender_info["email"]
+        cells = config.AppConstants.EXCEL_CELLS
+        ws.Range(cells['SUPPLIER_NAME']).Value = f"{supplier_name} 御中"
+        ws.Range(cells['SALES_CONTACT']).Value = f"{sales_contact} 様"
+        ws.Range(cells['SENDER_NAME']).Value = f"担当：{sender_info['name']}"
+        ws.Range(cells['SENDER_EMAIL']).Value = sender_info["email"]
 
         for i, item in enumerate(items):
-            ws.Range(f"A{16+i}").Value = item["db_part_number"]
-            ws.Range(f"B{16+i}").Value = item["maker_name"]
-            ws.Range(f"C{16+i}").Value = item["quantity"]
+            row = cells['ITEM_START_ROW'] + i
+            ws.Range(f"A{row}").Value = item["db_part_number"]
+            ws.Range(f"B{row}").Value = item["maker_name"]
+            ws.Range(f"C{row}").Value = item["quantity"]
         
         # PDFのファイルパスを生成
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -51,7 +52,7 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
                 target_save_dir = department_dir
             else:
                 # 部署フォルダが存在しない場合は、デフォルトの保存先に保存
-                print(f"警告: 部署フォルダ '{department_dir}' が見つからないため、デフォルトの保存先に保存します。")
+                pass
 
         if not os.path.exists(target_save_dir):
             os.makedirs(target_save_dir)
@@ -60,18 +61,23 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         # 一時ファイルなしで直接PDFに変換
         ws.ExportAsFixedFormat(0, pdf_path)
         
-        
         return pdf_path
         
     except Exception as e:
-        print(f"PDF作成エラー ({supplier_name}): {e}")
-        traceback.print_exc()
         return None
         
     finally:
         # クリーンアップ処理
-        if workbook:
-            workbook.Close(SaveChanges=False)
-        if excel:
-            excel.Quit()
-        # 念のためCOMオブジェクトの参照を解放
+        try:
+            if workbook:
+                workbook.Close(SaveChanges=False)
+        except:
+            pass
+        try:
+            if excel:
+                excel.Quit()
+        except:
+            pass
+        # COMオブジェクトの参照を明示的に解放
+        workbook = None
+        excel = None
