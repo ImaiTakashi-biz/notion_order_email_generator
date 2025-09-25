@@ -30,13 +30,7 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         cells = config.AppConstants.EXCEL_CELLS
         ws.Range(cells['SUPPLIER_NAME']).Value = f"{supplier_name} 御中"
         ws.Range(cells['SALES_CONTACT']).Value = f"{sales_contact} 様"
-        
-        # 部署名を担当名前に追加
-        if selected_department:
-            ws.Range(cells['SENDER_NAME']).Value = f"担当：{selected_department} {sender_info['name']}"
-        else:
-            ws.Range(cells['SENDER_NAME']).Value = f"担当：{sender_info['name']}"
-            
+        ws.Range(cells['SENDER_NAME']).Value = f"担当：{sender_info['name']}"
         ws.Range(cells['SENDER_EMAIL']).Value = sender_info["email"]
 
         for i, item in enumerate(items):

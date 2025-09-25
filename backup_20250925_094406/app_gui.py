@@ -450,14 +450,7 @@ Notionからデータ取得中..."""))
         selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
         self.q.put(("log", f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})..."))
         items = self.orders_by_supplier.get(selected_supplier, [])
-        # 選択された部署を取得
-        selected_department = None
-        for dept, var in self.department_vars.items():
-            if var.get():
-                selected_department = dept
-                break
-        
-        success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds, display_name, selected_department)
+        success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds, display_name)
         if success:
             page_ids_to_update = [item['page_id'] for item in items]
             self.q.put(("ask_and_update_notion", (selected_supplier, page_ids_to_update)))

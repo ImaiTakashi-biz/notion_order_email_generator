@@ -5,7 +5,7 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import config
 
-def send_smtp_mail(info, pdf_path, sender_creds, account_name, selected_department=None):
+def send_smtp_mail(info, pdf_path, sender_creds, account_name):
     """
     SMTPサーバー経由でPDF添付メールを送信する
     """
@@ -20,19 +20,6 @@ def send_smtp_mail(info, pdf_path, sender_creds, account_name, selected_departme
         
         msg["Subject"] = template['subject']
 
-        # 部署名を発注担当名前に追加
-        if selected_department:
-            order_contact = f"{selected_department} {account_name}"
-        else:
-            order_contact = account_name
-
-        # ガイダンス番号を取得
-        guidance_numbers = config.load_department_guidance_numbers()
-        guidance_number = guidance_numbers.get(selected_department, "")
-        tel_with_guidance = company['tel']
-        if guidance_number:
-            tel_with_guidance = f"{company['tel']} ({guidance_number})"
-
         # メール本文 (署名を動的に生成)
         body = f"""{info['supplier_name']}
 {info.get('sales_contact', 'ご担当者')} 様
@@ -42,11 +29,11 @@ def send_smtp_mail(info, pdf_path, sender_creds, account_name, selected_departme
 
 ∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝
 {company['name']}
-発注担当： {order_contact}
+発注担当： {account_name}
 {company['postal_code']}
 {company['address']}
 Email: {sender_creds["sender"]}
-{tel_with_guidance}
+{company['tel']}
 {company['fax']}
 ∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝"""
         msg.attach(MIMEText(body, 'plain'))

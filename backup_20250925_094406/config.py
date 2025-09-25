@@ -87,12 +87,6 @@ def load_departments():
     """
     return _settings.get("departments", [])
 
-def load_department_guidance_numbers():
-    """
-    読み込まれた設定から部署ごとのガイダンス番号情報を返します。
-    """
-    return _settings.get("department_guidance_numbers", {})
-
 
 def validate_config():
     """設定値の妥当性を検証する"""
