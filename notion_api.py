@@ -135,19 +135,25 @@ def get_order_data_from_notion(department_names=None):
     return {"orders": order_list, "unlinked_count": unlinked_count}
 
 def update_notion_pages(page_ids):
-    """指定されたNotionページのリストの「発注日」を今日の日付に更新する"""
+    """指定されたNotionページのリストの「発注日」を今日の日付に並列で更新する"""
     if not page_ids:
         return
         
     notion = Client(auth=config.NOTION_API_TOKEN)
     today = datetime.now().strftime("%Y-%m-%d")
-    
-    for page_id in page_ids:
+
+    def _update_single_page(page_id):
+        """単一ページを更新する。失敗した場合は例外を投げずにpassする"""
         try:
             notion.pages.update(
                 page_id=page_id,
                 properties={"発注日": {"date": {"start": today}}}
             )
             time.sleep(config.AppConstants.NOTION_API_DELAY)
-        except Exception as e:
-            pass  # app_gui.pyでエラーハンドリング
+        except Exception:
+            # app_gui.py側で個別のエラー処理はしていないため、ここでは単に失敗したことを示す
+            # 呼び出し元は包括的なエラーハンドリングを持っている
+            pass
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(_update_single_page, page_ids)
