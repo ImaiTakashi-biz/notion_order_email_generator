@@ -1,7 +1,6 @@
 import os
 import json
 from dotenv import load_dotenv
-from cryptography.fernet import Fernet
 
 # .envファイルからNotionのトークンなどを読み込む
 load_dotenv()
@@ -19,37 +18,6 @@ def _load_settings_from_json(file_path="email_accounts.json"):
 
 # 起動時に一度だけ設定を読み込む
 _settings = _load_settings_from_json()
-
-# --- 暗号化関連 ---
-def _get_encryption_key():
-    """環境変数から暗号化キーを取得または生成する"""
-    key = os.getenv("EMAIL_ENCRYPTION_KEY")
-    if key is None:
-        key = Fernet.generate_key().decode()
-        # .envファイルにキーを追記
-        with open('.env', 'a') as f:
-            f.write(f'\nEMAIL_ENCRYPTION_KEY="{key}"')
-        load_dotenv() # .envを再読み込み
-        print("新しい暗号化キーを生成し、.envファイルに保存しました。")
-    return key.encode()
-
-_fernet = Fernet(_get_encryption_key())
-
-def encrypt_password(password):
-    """パスワードを暗号化する"""
-    if not password:
-        return ""
-    return _fernet.encrypt(password.encode()).decode()
-
-def decrypt_password(encrypted_password):
-    """暗号化されたパスワードを復号化する"""
-    if not encrypted_password:
-        return ""
-    try:
-        return _fernet.decrypt(encrypted_password.encode()).decode()
-    except Exception:
-        # 復号化に失敗した場合（キーが異なる、データが破損しているなど）
-        return ""
 
 # --- 各種設定を変数としてエクスポート ---
 
@@ -104,17 +72,8 @@ class AppConstants:
 def load_email_accounts():
     """
     読み込まれた設定からメールアカウント情報を返します。
-    パスワードは復号化して返します。
     """
-    accounts = _settings.get("accounts", {})
-    # 辞書のコピーを作成して変更を反映
-    decrypted_accounts = {}
-    for key, details in accounts.items():
-        decrypted_details = details.copy()
-        if "password" in decrypted_details:
-            decrypted_details["password"] = decrypt_password(decrypted_details["password"])
-        decrypted_accounts[key] = decrypted_details
-    return decrypted_accounts
+    return _settings.get("accounts", {})
 
 def load_department_defaults():
     """
@@ -172,18 +131,8 @@ def validate_config():
 def save_settings(json_data):
     """
     GUIから受け取った設定をJSONファイルに保存する
-    パスワードは暗号化して保存します。
     """
     try:
-        # パスワードを暗号化
-        accounts_to_save = {}
-        for key, details in json_data.get("accounts", {}).items():
-            details_to_save = details.copy()
-            if "password" in details_to_save and details_to_save["password"]:
-                details_to_save["password"] = encrypt_password(details_to_save["password"])
-            accounts_to_save[key] = details_to_save
-        json_data["accounts"] = accounts_to_save
-
         # JSON ファイルの保存
         with open("email_accounts.json", 'w', encoding='utf-8') as f:
             json.dump(json_data, f, indent=2, ensure_ascii=False)
