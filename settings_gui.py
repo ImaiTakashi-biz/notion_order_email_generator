@@ -23,7 +23,8 @@ class AccountDialog(tk.Toplevel):
         if account_info:
             self.display_name_var.set(account_info.get("display_name", ""))
             self.sender_var.set(account_info.get("sender", ""))
-            self.password_var.set(account_info.get("password", ""))
+            # パスワードは復号化して表示
+            self.password_var.set(config.decrypt_password(account_info.get("password", "")))
 
         # --- UI ---
         frame = ttk.Frame(self, padding=20)
@@ -44,6 +45,7 @@ class AccountDialog(tk.Toplevel):
 
         ttk.Label(frame, text="パスワード:").grid(row=3, column=0, sticky=tk.W, pady=5)
         ttk.Entry(frame, textvariable=self.password_var, show="*").grid(row=3, column=1, sticky="ew", pady=5)
+        ttk.Label(frame, text="※パスワードは暗号化されて保存されます", font=("", 8), foreground="gray").grid(row=4, column=1, sticky=tk.W, pady=(0, 10))
 
         button_frame = ttk.Frame(frame)
         button_frame.grid(row=4, column=0, columnspan=2, sticky="e", pady=(15, 0))
@@ -61,7 +63,7 @@ class AccountDialog(tk.Toplevel):
             "details": {
                 "display_name": self.display_name_var.get(),
                 "sender": self.sender_var.get(),
-                "password": self.password_var.get()
+                "password": config.encrypt_password(self.password_var.get()) # パスワードを暗号化して保存
             }
         }
         self.destroy()
