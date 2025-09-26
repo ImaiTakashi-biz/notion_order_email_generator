@@ -214,17 +214,9 @@ class Application(ttk.Frame):
         table_pane = ttk.LabelFrame(middle_pane, text="発注対象データ")
         middle_pane.add(table_pane, weight=3)
 
-        # Treeviewの定義
-        self.supplier_listbox = ttk.Treeview(supplier_pane, columns=("supplier_name",), show="headings", selectmode="browse")
-        self.supplier_listbox.heading("supplier_name", text="仕入先")
-        self.supplier_listbox.column("supplier_name", width=200, anchor=tk.W) # 幅を調整
-        
-        # スタイル設定 (送信済みアイテム用)
-        self.supplier_listbox.tag_configure('sent', foreground='gray', background='#F0F0F0')
-
+        self.supplier_listbox = tk.Listbox(supplier_pane, exportselection=False, bg=self.LIGHT_BG, fg=self.TEXT_COLOR, selectbackground=self.SELECT_BG, selectforeground=self.SELECT_FG, font=("Yu Gothic UI", 11), relief="flat", borderwidth=0, highlightthickness=0)
         self.supplier_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(1,0), pady=1)
-        self.supplier_listbox.bind("<ButtonRelease-1>", self.on_supplier_select) # イベントバインド変更
-        
+        self.supplier_listbox.bind("<<ListboxSelect>>", self.on_supplier_select)
         supplier_vsb = ttk.Scrollbar(supplier_pane, orient="vertical", command=self.supplier_listbox.yview, style="Vertical.TScrollbar")
         self.supplier_listbox.config(yscrollcommand=supplier_vsb.set)
         supplier_vsb.pack(side=tk.RIGHT, fill=tk.Y, pady=1)
@@ -371,30 +363,10 @@ class Application(ttk.Frame):
         threading.Thread(target=self.run_thread, args=(self.get_data_task,)).start()
         self.master.after(config.AppConstants.QUEUE_CHECK_INTERVAL, self.check_queue)
 
-    def on_supplier_select(self, event):
-        # クリックされた行のIDを取得
-        selected_iid = self.supplier_listbox.identify_row(event.y)
-
-        # 行がクリックされていない（空白部分）場合は処理を中断
-        if not selected_iid:
-            return
-            
-        # クリックされた行を選択状態にする
-        self.supplier_listbox.selection_set(selected_iid)
-
-        # 処理が実行中なら中断
-        if self.processing:
-            return
-
-        # 選択されたアイテムの値をTreeviewから取得
-        selected_supplier = self.supplier_listbox.item(selected_iid, 'values')[0]
-        
-        # 送信済みならプレビューをクリアして中断
-        if selected_supplier in self.sent_suppliers:
-            self.clear_preview()
-            return
-        
-        # 正常な処理へ
+    def on_supplier_select(self, event=None):
+        if self.processing or not self.supplier_listbox.curselection(): return
+        selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
+        if selected_supplier in self.sent_suppliers: self.clear_preview(); return
         self.processing = True; self.toggle_buttons(False)
         self.start_spinner()
         self.update_table_for_supplier(selected_supplier)
@@ -443,14 +415,7 @@ Notionからデータ取得中..."""))
             
             sender_creds = self.accounts[account_key]
             sender_info = {"name": sender_creds.get("display_name", account_key), "email": sender_creds["sender"]}
-            
-            # Treeviewから選択された仕入先を取得
-            selected_iids = self.supplier_listbox.selection()
-            if not selected_iids: # 選択されていない場合は処理を中断
-                self.q.put(("log", "エラー: PDF作成対象の仕入先が選択されていません。", "error"))
-                return self.q.put(("task_complete", None))
-            selected_supplier_iid = selected_iids[0]
-            selected_supplier = self.supplier_listbox.item(selected_supplier_iid, 'values')[0]
+            selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
             
             self.q.put(("log", ""))
             self.q.put(("log", "----------------------------------------"))
@@ -482,15 +447,7 @@ Notionからデータ取得中..."""))
 
         sender_creds = self.accounts[account_key]
         display_name = sender_creds.get("display_name", account_key)
-        
-        # Treeviewから選択された仕入先を取得
-        selected_iids = self.supplier_listbox.selection()
-        if not selected_iids: # 選択されていない場合は処理を中断
-            self.q.put(("log", "エラー: 送信する仕入先が選択されていません。", "error"))
-            return self.q.put(("task_complete", None))
-        selected_supplier_iid = selected_iids[0]
-        selected_supplier = self.supplier_listbox.item(selected_supplier_iid, 'values')[0]
-
+        selected_supplier = self.supplier_listbox.get(self.supplier_listbox.curselection())
         self.q.put(("log", f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})..."))
         items = self.orders_by_supplier.get(selected_supplier, [])
         # 選択された部署を取得
@@ -618,12 +575,8 @@ Notionからデータ取得中..."""))
     def mark_as_sent(self, supplier, updated=True):
         self.sent_suppliers.add(supplier)
         try:
-            # Treeviewのアイテムを検索し、タグを適用
-            for iid in self.supplier_listbox.get_children():
-                if self.supplier_listbox.item(iid, 'values')[0] == supplier:
-                    self.supplier_listbox.item(iid, tags=('sent',))
-                    self.supplier_listbox.selection_remove(iid) # 選択を解除
-                    break
+            idx = self.supplier_listbox.get(0, "end").index(supplier)
+            self.supplier_listbox.itemconfig(idx, {'fg': 'gray', 'bg': '#F0F0F0'}); self.supplier_listbox.selection_clear(idx)
         except ValueError: pass
         self.clear_preview()
         status = "更新済み" if updated else "更新スキップ"
@@ -637,12 +590,12 @@ Notionからデータ取得中..."""))
             self.tree.insert("", tk.END, values=(item.get("maker_name", ""), item.get("db_part_number", ""), item.get("quantity", 0)))
 
     def update_supplier_list(self, data):
-        self.supplier_listbox.delete(*self.supplier_listbox.get_children())
+        self.supplier_listbox.delete(0, tk.END)
         suppliers = sorted(list(set(i["supplier_name"] for i in data)))
-        for s in suppliers: self.supplier_listbox.insert('', tk.END, values=(s,))
+        for s in suppliers: self.supplier_listbox.insert(tk.END, s)
 
     def clear_displays(self): 
-        self.tree.delete(*self.tree.get_children()); self.supplier_listbox.delete(*self.supplier_listbox.get_children()); self.sent_suppliers.clear(); self.clear_preview()
+        self.tree.delete(*self.tree.get_children()); self.supplier_listbox.delete(0, tk.END); self.sent_suppliers.clear(); self.clear_preview()
         self.log_display.config(state="normal"); self.log_display.delete(1.0, tk.END); self.log_display.config(state="disabled")
 
     def clear_preview(self):
