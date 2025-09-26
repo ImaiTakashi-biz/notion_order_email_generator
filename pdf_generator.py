@@ -28,22 +28,24 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         ws = workbook.ActiveSheet
 
         cells = config.AppConstants.EXCEL_CELLS
-        ws.Range(cells['SUPPLIER_NAME']).Value = f"{supplier_name} 御中"
-        ws.Range(cells['SALES_CONTACT']).Value = f"{sales_contact} 様"
+        # Formula Injection対策: 値の先頭にシングルクォートを付与して文字列として扱う
+        ws.Range(cells['SUPPLIER_NAME']).Value = f"'{supplier_name} 御中"
+        ws.Range(cells['SALES_CONTACT']).Value = f"'{sales_contact} 様"
         
         # 部署名を担当名前に追加
         if selected_department:
-            ws.Range(cells['SENDER_NAME']).Value = f"担当：{selected_department} {sender_info['name']}"
+            ws.Range(cells['SENDER_NAME']).Value = f"'担当：{selected_department} {sender_info['name']}"
         else:
-            ws.Range(cells['SENDER_NAME']).Value = f"担当：{sender_info['name']}"
+            ws.Range(cells['SENDER_NAME']).Value = f"'担当：{sender_info['name']}"
             
-        ws.Range(cells['SENDER_EMAIL']).Value = sender_info["email"]
+        ws.Range(cells['SENDER_EMAIL']).Value = f"'{sender_info["email"]}"
 
         for i, item in enumerate(items):
             row = cells['ITEM_START_ROW'] + i
-            ws.Range(f"A{row}").Value = item["db_part_number"]
-            ws.Range(f"B{row}").Value = item["maker_name"]
-            ws.Range(f"C{row}").Value = item["quantity"]
+            # Formula Injection対策: 値の先頭にシングルクォートを付与
+            ws.Range(f"A{row}").Value = f"'{item.get("db_part_number", "")}"
+            ws.Range(f"B{row}").Value = f"'{item.get("maker_name", "")}"
+            ws.Range(f"C{row}").Value = f"'{item.get("quantity", 0)}"
         
         # PDFのファイルパスを生成
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -71,7 +73,6 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         
     except Exception as e:
         return None
-        
     finally:
         # クリーンアップ処理
         try:

@@ -12,9 +12,16 @@ def send_smtp_mail(info, pdf_path, sender_creds, account_name, selected_departme
     try:
         msg = MIMEMultipart()
         msg["From"] = sender_creds["sender"]
-        msg["To"] = info["email"]
-        if info["email_cc"]:
-            msg["Cc"] = info["email_cc"]
+        
+        # CRLFインジェクション対策: メールヘッダーに設定する値から改行コードを除去
+        to_email = info.get("email")
+        cc_email = info.get("email_cc")
+        
+        if to_email:
+            msg["To"] = to_email.splitlines()[0]
+        
+        if cc_email:
+            msg["Cc"] = cc_email.splitlines()[0]
         template = config.AppConstants.EMAIL_TEMPLATE
         company = config.AppConstants.COMPANY_INFO
         
