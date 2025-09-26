@@ -72,5 +72,16 @@ Email: {sender_creds["sender"]}
             server.sendmail(sender_creds["sender"], recipients, msg.as_string())
             
         return True
+    except smtplib.SMTPAuthenticationError:
+        print("❌ メール送信エラー: SMTP認証に失敗しました。")
+        print("   -> メールアドレスまたはパスワードが間違っている可能性があります。")
+        print("   -> 設定画面からアカウント情報をご確認ください。")
+        return False
+    except (smtplib.SMTPConnectError, ConnectionRefusedError, OSError) as e:
+        print(f"❌ メール送信エラー: SMTPサーバー({config.SMTP_SERVER}:{config.SMTP_PORT})に接続できません。")
+        print("   -> サーバーアドレス、ポート番号、ネットワーク接続を確認してください。")
+        print(f"   -> 詳細: {e}")
+        return False
     except Exception as e:
+        print(f"❌ メール送信中に予期せぬエラーが発生しました: {e}")
         return False

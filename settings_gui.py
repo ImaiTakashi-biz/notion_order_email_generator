@@ -3,6 +3,15 @@ from tkinter import ttk, filedialog, messagebox
 from tkinter.simpledialog import askstring
 import config
 
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from tkinter.simpledialog import askstring
+import config
+import keyring
+
+# アプリケーション識別のためのサービス名
+SERVICE_NAME = "NotionOrderApp"
+
 class AccountDialog(tk.Toplevel):
     """アカウントの追加・編集を行うダイアログ"""
     def __init__(self, master, account_info=None, account_key=None, is_new=True):
@@ -11,6 +20,8 @@ class AccountDialog(tk.Toplevel):
         self.grab_set()
 
         self.result = None
+        self.is_new = is_new
+        self.original_sender = account_info.get("sender", "") if account_info else ""
 
         self.title("アカウントの追加" if is_new else "アカウントの編集")
 
@@ -22,8 +33,14 @@ class AccountDialog(tk.Toplevel):
 
         if account_info:
             self.display_name_var.set(account_info.get("display_name", ""))
-            self.sender_var.set(account_info.get("sender", ""))
-            self.password_var.set(account_info.get("password", ""))
+            sender_email = account_info.get("sender", "")
+            self.sender_var.set(sender_email)
+            # keyringからパスワードを取得
+            if sender_email:
+                password = keyring.get_password(SERVICE_NAME, sender_email)
+                if password:
+                    self.password_var.set(password)
+
         # --- UI ---
         frame = ttk.Frame(self, padding=20)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -51,16 +68,30 @@ class AccountDialog(tk.Toplevel):
 
     def ok_pressed(self):
         key = self.key_var.get().strip()
-        if not key:
-            messagebox.showerror("入力エラー", "一意のキーは必須です。", parent=self)
+        sender_email = self.sender_var.get().strip()
+        password = self.password_var.get()
+
+        if not key or not sender_email:
+            messagebox.showerror("入力エラー", "一意のキーとメールアドレスは必須です。", parent=self)
             return
-        
+
+        # 編集時かつメールアドレスが変更された場合、古いキーリングエントリを削除
+        if not self.is_new and self.original_sender and self.original_sender != sender_email:
+            try:
+                keyring.delete_password(SERVICE_NAME, self.original_sender)
+            except keyring.errors.PasswordDeleteError:
+                # エントリが存在しない場合は何もしない
+                pass
+
+        # keyringにパスワードを保存
+        keyring.set_password(SERVICE_NAME, sender_email, password)
+
         self.result = {
             "key": key,
             "details": {
                 "display_name": self.display_name_var.get(),
-                "sender": self.sender_var.get(),
-                "password": self.password_var.get()
+                "sender": sender_email,
+                # "password" は結果に含めない
             }
         }
         self.destroy()
@@ -239,10 +270,23 @@ class SettingsWindow(tk.Toplevel):
             messagebox.showwarning("選択エラー", "削除するアカウントを選択してください。", parent=self)
             return
         
-        display_name = self.accounts_data.get(selected_key, {}).get("display_name", selected_key)
+        account_info = self.accounts_data.get(selected_key, {})
+        display_name = account_info.get("display_name", selected_key)
+        sender_email = account_info.get("sender")
+
         if messagebox.askyesno("削除確認", f"アカウント「{display_name}」を削除しますか？\nこのアカウントを使用している部署のデフォルト設定は解除されます。", parent=self):
+            # keyringからパスワードを削除
+            if sender_email:
+                try:
+                    keyring.delete_password(SERVICE_NAME, sender_email)
+                except keyring.errors.PasswordDeleteError:
+                    # エントリが存在しない場合は何もしない
+                    pass
+            
+            # データからアカウントを削除
             if selected_key in self.accounts_data:
                 del self.accounts_data[selected_key]
+            
             self.refresh_accounts_tree()
             self.refresh_defaults_ui()
             self.refresh_guidance_ui()
