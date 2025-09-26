@@ -576,7 +576,7 @@ Notionからデータ取得中..."""))
         self.sent_suppliers.add(supplier)
         try:
             idx = self.supplier_listbox.get(0, "end").index(supplier)
-            self.supplier_listbox.itemconfig(idx, {'fg': 'gray'}); self.supplier_listbox.selection_clear(idx)
+            self.supplier_listbox.itemconfig(idx, {'fg': 'gray', 'bg': '#F0F0F0'}); self.supplier_listbox.selection_clear(idx)
         except ValueError: pass
         self.clear_preview()
         status = "更新済み" if updated else "更新スキップ"
