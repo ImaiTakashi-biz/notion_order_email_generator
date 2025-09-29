@@ -1,38 +1,34 @@
 import tkinter as tk
 from tkinter import messagebox
-import sys
 import config
 from app_gui import Application
 
-def run_pre_flight_checks():
-    """アプリケーション起動前の設定検証"""
+def main():
+    """
+    アプリケーションのメイン関数
+    """
+    # 起動前に設定を検証
     is_valid, errors = config.validate_config()
+
     if not is_valid:
-        # GUIを表示する前にエラーを表示するため、一時的なTkルートを作成
+        # エラーメッセージを整形
+        error_title = "設定エラー"
+        error_details = "\n".join(errors)
+        full_message = f"アプリケーションを起動できませんでした。\n以下の項目を確認してください:\n\n{error_details}"
+        
+        # GUIを使わずにエラーダイアログを表示
         root = tk.Tk()
-        root.withdraw() # メインウィンドウは表示しない
-        error_message = "アプリケーションを開始できませんでした。\n以下の設定を確認してください:\n\n" + "\n".join(f"・{e}" for e in errors)
-        messagebox.showerror("設定エラー", error_message)
+        root.withdraw() # メインウィンドウを非表示にする
+        messagebox.showerror(error_title, full_message)
         root.destroy()
-        return False
-    return True
+        return # アプリケーションを終了
 
-if __name__ == "__main__":
-    # 起動前チェックを実行
-    if not run_pre_flight_checks():
-        sys.exit(1)
-
-    # アプリケーションのメインウィンドウを作成
+    # 検証が成功した場合のみGUIを起動
     root = tk.Tk()
-    
-    # アプリケーションのインスタンスを作成
-    app = Application(master=root)
-    
-    # ウィンドウのタイトルを設定
-    app.master.title("Notion注文書メール作成アプリ")
-    
-    # ウィンドウを最大化して表示
+    root.title("Notion 注文書メール自動作成アプリ")
     root.state('zoomed')
-    
-    # メインループを開始
+    app = Application(master=root)
     app.mainloop()
+
+if __name__ == '__main__':
+    main()

@@ -1,15 +1,15 @@
 import os
 import re
 from datetime import datetime
-import win32com.client
+import win32com.client as win32
+import pythoncom
+
 import config
 
 def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_department=None):
     """
-    Excelテンプレートから注文書PDFを作成する (win32comのみ使用)。
-    この関数はwin32comを使用するため、Windows環境とExcelのインストールが必要です。
-    また、スレッドから呼び出す場合は、呼び出し元でpythoncom.CoInitialize()と
-    CoUninitialize()を処理する必要があります。
+    Excelテンプレートから注文書PDFを作成する内部関数。
+    win32comを使用するため、Windows環境とExcelのインストールが必要。
     """
     excel = None
     workbook = None
@@ -18,7 +18,7 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         return None
 
     try:
-        excel = win32com.client.Dispatch("Excel.Application")
+        excel = win32.Dispatch("Excel.Application")
         excel.Visible = False
         excel.DisplayAlerts = False
 
@@ -69,22 +69,47 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         # 一時ファイルなしで直接PDFに変換
         ws.ExportAsFixedFormat(0, pdf_path)
         
+        print(f"✅ PDFを作成しました: {pdf_path}")
         return pdf_path
-        
     except Exception as e:
+        print(f"❌ PDF作成中にエラーが発生しました: {e}")
         return None
     finally:
-        # クリーンアップ処理
-        try:
-            if workbook:
-                workbook.Close(SaveChanges=False)
-        except:
-            pass
-        try:
-            if excel:
-                excel.Quit()
-        except:
-            pass
-        # COMオブジェクトの参照を明示的に解放
-        workbook = None
-        excel = None
+        if 'excel' in locals() and excel is not None:
+            excel.Quit()
+
+def generate_order_pdf_flow(supplier_name, items, sender_info, selected_department=None):
+    """
+    UIからの情報を受け取り、PDF作成のフロー全体を管理する
+    """
+    pythoncom.CoInitialize()
+    try:
+        if not items:
+            error_message = "対象アイテムが見つかりません。"
+            print(f"❌ PDF作成エラー: {error_message}")
+            return None, None, error_message
+
+        # create_order_pdfを呼び出す
+        pdf_path = create_order_pdf(
+            supplier_name,
+            items,
+            items[0]["sales_contact"], # 代表の連絡先を取得
+            sender_info,
+            selected_department=selected_department
+        )
+        
+        if not pdf_path:
+            # create_order_pdf内でエラーが発生した場合
+            return None, None, "ExcelでのPDF作成中にエラーが発生しました。詳細はコンソールログを確認してください。"
+
+        # GUIのプレビュー更新に必要な情報を返す (成功)
+        return pdf_path, items[0], None
+
+    except Exception as e:
+        error_message = f"予期せぬエラーが発生しました: {e}"
+        print(f"❌ PDF生成フロー中に{error_message}")
+        return None, None, error_message
+    finally:
+        pythoncom.CoUninitialize()
+
+

@@ -4,12 +4,29 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import config
+import keyring
+
+# アプリケーション識別のためのサービス名 (settings_gui.pyと合わせる)
+SERVICE_NAME = "NotionOrderApp"
 
 def send_smtp_mail(info, pdf_path, sender_creds, account_name, selected_department=None):
     """
     SMTPサーバー経由でPDF添付メールを送信する
     """
     try:
+        # --- パスワードをkeyringから取得 ---
+        sender_email = sender_creds.get("sender")
+        if not sender_email:
+            print("❌ メール送信エラー: 送信元メールアドレスが不明です。")
+            return False
+
+        password = keyring.get_password(SERVICE_NAME, sender_email)
+        if not password:
+            print(f"❌ メール送信エラー: {sender_email} のパスワードがキーチェーンに見つかりません。")
+            print("   -> 設定画面からパスワードを再設定してください。")
+            return False
+        # --- ここまでが変更点 ---
+
         msg = MIMEMultipart()
         msg["From"] = sender_creds["sender"]
         
@@ -67,7 +84,7 @@ Email: {sender_creds["sender"]}
         # SMTPサーバーに接続して送信
         with smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT) as server:
             server.starttls()
-            server.login(sender_creds["sender"], sender_creds["password"])
+            server.login(sender_email, password)
             recipients = [info["email"]] + ([info["email_cc"]] if info["email_cc"] else [])
             server.sendmail(sender_creds["sender"], recipients, msg.as_string())
             
@@ -85,3 +102,36 @@ Email: {sender_creds["sender"]}
     except Exception as e:
         print(f"❌ メール送信中に予期せぬエラーが発生しました: {e}")
         return False
+
+def prepare_and_send_order_email(account_key, sender_creds, items, pdf_path, selected_department=None):
+    """
+    UIからの情報をもとにメール送信の準備と実行を行う
+    """
+    sender_email = sender_creds.get("sender")
+    display_name = sender_creds.get("display_name", account_key)
+
+    # keyringからパスワードを取得
+    password = keyring.get_password(SERVICE_NAME, sender_email)
+    if not password:
+        print(f"❌ パスワード取得エラー: {sender_email} のパスワードがOSに保存されていません。")
+        print("   -> [設定]画面からアカウントを一度開き、パスワードを再保存してください。")
+        return False
+    
+    # send_smtp_mailに渡すために、sender_credsにパスワードを一時的に追加
+    creds_with_pass = sender_creds.copy()
+    creds_with_pass["password"] = password
+
+    if not items:
+        print("❌ メール送信エラー: 対象アイテムがありません。")
+        return False
+
+    # メール送信を実行
+    success = send_smtp_mail(
+        info=items[0], 
+        pdf_path=pdf_path, 
+        sender_creds=creds_with_pass, 
+        account_name=display_name, 
+        selected_department=selected_department
+    )
+    
+    return success

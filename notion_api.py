@@ -1,7 +1,12 @@
+import notion_client
+import os
 import time
 from datetime import datetime
 from notion_client import Client
 import config
+
+# Notionクライアントの初期化
+notion = notion_client.Client(auth=config.NOTION_API_TOKEN)
 import concurrent.futures
 
 # --- 安全なデータ取得のためのヘルパー関数群 ---
@@ -135,25 +140,43 @@ def get_order_data_from_notion(department_names=None):
     return {"orders": order_list, "unlinked_count": unlinked_count}
 
 def update_notion_pages(page_ids):
-    """指定されたNotionページのリストの「発注日」を今日の日付に並列で更新する"""
-    if not page_ids:
-        return
-        
-    notion = Client(auth=config.NOTION_API_TOKEN)
+    """
+    メール送信済みのNotionページの「発注日」を今日の日付に更新する
+    """
     today = datetime.now().strftime("%Y-%m-%d")
-
-    def _update_single_page(page_id):
-        """単一ページを更新する。失敗した場合は例外を投げずにpassする"""
+    for page_id in page_ids:
         try:
             notion.pages.update(
                 page_id=page_id,
                 properties={"発注日": {"date": {"start": today}}}
             )
+            print(f"✅ Notionページ (ID: {page_id}) の発注日を更新しました。")
             time.sleep(config.AppConstants.NOTION_API_DELAY)
-        except Exception:
-            # app_gui.py側で個別のエラー処理はしていないため、ここでは単に失敗したことを示す
-            # 呼び出し元は包括的なエラーハンドリングを持っている
-            pass
+        except Exception as e:
+            print(f"❌ Notionページの更新に失敗しました (ID: {page_id}): {e}")
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.map(_update_single_page, page_ids)
+def fetch_and_process_orders(department_names=None):
+    """
+    Notionからデータを取得し、仕入先ごとにグループ化する
+    """
+    from collections import defaultdict
+
+    # ステップ1: データを取得
+    raw_data = get_order_data_from_notion(department_names)
+    orders = raw_data.get("orders", [])
+    unlinked_count = raw_data.get("unlinked_count", 0)
+
+    # ステップ2: 仕入先ごとにグループ化
+    grouped_orders = defaultdict(list)
+    for order in orders:
+        supplier_name = order.get("supplier_name")
+        if supplier_name:
+            grouped_orders[supplier_name].append(order)
+
+    # ステップ3: GUIが必要とする形式で結果を返す
+    return {
+        "orders_by_supplier": dict(grouped_orders),
+        "all_orders": orders,
+        "unlinked_count": unlinked_count
+    }
+

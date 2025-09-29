@@ -415,60 +415,88 @@ class Application(ttk.Frame):
         self.log("STEP 2: Notionからデータを取得")
         self.log("----------------------------------------")
         self.log(f"部署名「{', '.join(self.selected_departments)}」でフィルタリング中...\nNotionからデータ取得中..." if self.selected_departments else "部署名フィルターは未選択です。\nNotionからデータ取得中...")
-        data = notion_api.get_order_data_from_notion(department_names=self.selected_departments)
-        self.log(f"✅ 完了 ({len(data['orders'])}件の要発注データが見つかりました)")
-        self.q.put(("update_data_ui", data))
+        
+        # 専門関数を呼び出すだけに変更
+        processed_data = notion_api.fetch_and_process_orders(department_names=self.selected_departments)
+        
+        order_count = len(processed_data.get("all_orders", []))
+        self.log(f"✅ 完了 ({order_count}件の要発注データが見つかりました)")
+        self.q.put(("update_data_ui", processed_data))
 
     def pdf_creation_flow_task(self):
-        import pythoncom
-        pythoncom.CoInitialize()
-        try:
-            account_key = self.display_name_to_key_map.get(self.selected_account_display_name.get())
-            if not account_key: return self.q.put(("task_complete", None))
-            sender_creds = self.accounts[account_key]
-            sender_info = {"name": sender_creds.get("display_name", account_key), "email": sender_creds["sender"]}
-            selected_iids = self.middle_pane.supplier_listbox.selection()
-            if not selected_iids: 
-                self.log("エラー: PDF作成対象の仕入先が選択されていません。", "error")
-                return self.q.put(("task_complete", None))
-            selected_supplier = self.middle_pane.supplier_listbox.item(selected_iids[0], 'values')[0]
-            self.log("\n----------------------------------------")
-            self.log("STEP 4: 注文書PDFの作成")
-            self.log("----------------------------------------")
-            self.log(f"「{selected_supplier}」の注文書を作成しています...")
-            items = self.orders_by_supplier.get(selected_supplier, [])
-            if not items: return self.q.put(("task_complete", None))
-            selected_department_for_pdf = self.selected_departments[0] if len(self.selected_departments) == 1 else None
-            pdf_path = pdf_generator.create_order_pdf(selected_supplier, items, items[0]["sales_contact"], sender_info, selected_department=selected_department_for_pdf)
-            self.q.put(("update_preview_ui", (items[0], pdf_path)) if pdf_path else ("task_complete", None))
-        finally:
-            pythoncom.CoUninitialize()
+        # --- 必要な情報をUIスレッドから取得 ---
+        account_key = self.display_name_to_key_map.get(self.selected_account_display_name.get())
+        if not account_key:
+            self.log("エラー: 送信者アカウントが選択されていません。", "error")
+            return self.q.put(("task_complete", None))
+        
+        sender_creds = self.accounts[account_key]
+        sender_info = {"name": sender_creds.get("display_name", account_key), "email": sender_creds["sender"]}
+        
+        selected_iids = self.middle_pane.supplier_listbox.selection()
+        if not selected_iids: 
+            self.log("エラー: PDF作成対象の仕入先が選択されていません。", "error")
+            return self.q.put(("task_complete", None))
+            
+        selected_supplier = self.middle_pane.supplier_listbox.item(selected_iids[0], 'values')[0]
+        items = self.orders_by_supplier.get(selected_supplier, [])
+        selected_department_for_pdf = self.selected_departments[0] if len(self.selected_departments) == 1 else None
+
+        self.log("\n----------------------------------------")
+        self.log("STEP 4: 注文書PDFの作成")
+        self.log("----------------------------------------")
+        self.log(f"「{selected_supplier}」の注文書を作成しています...")
+
+        # --- 専門家に関数を依頼 ---
+        pdf_path, info, error_message = pdf_generator.generate_order_pdf_flow(
+            selected_supplier,
+            items,
+            sender_info,
+            selected_department=selected_department_for_pdf
+        )
+
+        if error_message:
+            self.log(f"❌ PDF作成に失敗しました: {error_message}", "error")
+            self.q.put(("task_complete", None))
+        elif pdf_path and info:
+            self.q.put(("update_preview_ui", (info, pdf_path)))
+        else:
+            # 念のためのフォールバック
+            self.log("❌ PDF作成に失敗しました。不明なエラーです。", "error")
+            self.q.put(("task_complete", None))
 
     def send_mail_task(self):
-        SERVICE_NAME = "NotionOrderApp"
+        # --- 必要な情報をUIスレッドから取得 ---
         account_key = self.display_name_to_key_map.get(self.selected_account_display_name.get())
-        if not account_key: return self.q.put(("task_complete", None))
-        sender_creds = self.accounts[account_key].copy()
-        sender_email = sender_creds.get("sender")
-        display_name = sender_creds.get("display_name", account_key)
-        password = keyring.get_password(SERVICE_NAME, sender_email)
-        if not password:
-            self.log(f"❌ パスワード取得エラー: {sender_email} のパスワードがOSに保存されていません。", "error")
-            self.log("   -> [設定]画面からアカウントを一度開き、パスワードを再保存してください。", "error")
+        if not account_key: 
+            self.log("エラー: 送信者アカウントが選択されていません。", "error")
             return self.q.put(("task_complete", None))
-        sender_creds["password"] = password
+
+        sender_creds = self.accounts[account_key]
         selected_iids = self.middle_pane.supplier_listbox.selection()
         if not selected_iids: 
             self.log("エラー: 送信する仕入先が選択されていません。", "error")
             return self.q.put(("task_complete", None))
+
         selected_supplier = self.middle_pane.supplier_listbox.item(selected_iids[0], 'values')[0]
-        self.log(f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})...")
         items = self.orders_by_supplier.get(selected_supplier, [])
         selected_department = next((dept for dept, var in self.department_vars.items() if var.get()), None)
-        success = email_service.send_smtp_mail(items[0], self.current_pdf_path, sender_creds, display_name, selected_department)
+
+        self.log(f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})...")
+
+        # --- 専門家に関数を依頼 ---
+        success = email_service.prepare_and_send_order_email(
+            account_key,
+            sender_creds,
+            items,
+            self.current_pdf_path,
+            selected_department
+        )
+
         if success:
             self.q.put(("ask_and_update_notion", (selected_supplier, [item['page_id'] for item in items])))
         else:
+            self.log("❌ メール送信に失敗しました。ログを確認してください。", "error")
             self.q.put(("task_complete", None))
 
     def update_notion_task(self, page_ids):
@@ -504,22 +532,23 @@ class Application(ttk.Frame):
     def log(self, message, tag=None):
         self.bottom_pane.log(message, tag)
 
-    def update_data_ui(self, data_payload):
-        orders = data_payload.get("orders", [])
-        unlinked_count = data_payload.get("unlinked_count", 0)
-        self.order_data = orders
-        from collections import defaultdict
-        grouped = defaultdict(list)
-        for order in orders:
-            grouped[order.get("supplier_name", "")] .append(order)
-        self.orders_by_supplier = dict(grouped)
+    def update_data_ui(self, processed_data):
+        # 事前処理済みのデータを展開
+        self.orders_by_supplier = processed_data.get("orders_by_supplier", {})
+        all_orders = processed_data.get("all_orders", [])
+        unlinked_count = processed_data.get("unlinked_count", 0)
+        self.order_data = all_orders
+
+        # UIの更新
         self.sent_suppliers.clear()
         self.middle_pane.tree.delete(*self.middle_pane.tree.get_children())
-        self.middle_pane.update_supplier_list(orders)
+        self.middle_pane.update_supplier_list(all_orders)
+        
         if unlinked_count > 0:
             self.log("", None)
             self.log(f"⚠️ 警告: 仕入先が未設定の「要発注」データが{unlinked_count}件見つかりました。\n       これらのデータはリストに表示されていません。\n       Notionで「DB_仕入先リスト」を設定してください。", "error")
-        if not orders:
+        
+        if not all_orders:
             self.log("-> 発注対象のデータは見つかりませんでした。")
         else:
             self.log("\n----------------------------------------")
@@ -527,6 +556,7 @@ class Application(ttk.Frame):
             self.log("----------------------------------------")
             self.log("▼リストから仕入先を選択してください。", "emphasis")
             self.log("  クリックすると注文書が自動作成されます。", "emphasis")
+        
         self.q.put(("task_complete", None))
 
     def update_preview_ui(self, data):
