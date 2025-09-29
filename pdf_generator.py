@@ -6,7 +6,7 @@ import pythoncom
 
 import config
 
-def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_department=None):
+def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_department=None, save_dir=None):
     """
     Excelテンプレートから注文書PDFを作成する内部関数。
     win32comを使用するため、Windows環境とExcelのインストールが必要。
@@ -52,15 +52,23 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         safe_supplier_name = re.sub(r'[\\/:*?"<>|]', '_', supplier_name)
         pdf_filename = f"{timestamp}_{safe_supplier_name}_注文書.pdf"
         
-        # 保存ディレクトリを決定
-        target_save_dir = config.PDF_SAVE_DIR
+        # 保存ディレクトリを決定 (引数が優先)
+        base_save_dir = save_dir if save_dir is not None else config.PDF_SAVE_DIR
+
+        # 部署ごとのサブフォルダを考慮
+        target_save_dir = base_save_dir
         if selected_department:
-            department_dir = os.path.join(config.PDF_SAVE_DIR, selected_department)
+            department_dir = os.path.join(base_save_dir, selected_department)
+            # 部署フォルダが存在する場合のみ、そちらを優先
             if os.path.exists(department_dir) and os.path.isdir(department_dir):
                 target_save_dir = department_dir
-            else:
-                # 部署フォルダが存在しない場合は、デフォルトの保存先に保存
-                pass
+            # 存在しない場合は、ベースの保存先に保存（自動作成はしない）
+            elif not save_dir: # 通常保存の場合のみ作成
+                 try:
+                    os.makedirs(department_dir, exist_ok=True)
+                    target_save_dir = department_dir
+                 except OSError as e:
+                    print(f"部署フォルダの作成に失敗: {e}")
 
         if not os.path.exists(target_save_dir):
             os.makedirs(target_save_dir)
@@ -78,11 +86,10 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         if 'excel' in locals() and excel is not None:
             excel.Quit()
 
-def generate_order_pdf_flow(supplier_name, items, sender_info, selected_department=None):
+def generate_order_pdf_flow(supplier_name, items, sender_info, selected_department=None, save_dir=None):
     """
     UIからの情報を受け取り、PDF作成のフロー全体を管理する
     """
-    pythoncom.CoInitialize()
     try:
         if not items:
             error_message = "対象アイテムが見つかりません。"
@@ -95,7 +102,8 @@ def generate_order_pdf_flow(supplier_name, items, sender_info, selected_departme
             items,
             items[0]["sales_contact"], # 代表の連絡先を取得
             sender_info,
-            selected_department=selected_department
+            selected_department=selected_department,
+            save_dir=save_dir # 保存先を渡す
         )
         
         if not pdf_path:
@@ -109,7 +117,5 @@ def generate_order_pdf_flow(supplier_name, items, sender_info, selected_departme
         error_message = f"予期せぬエラーが発生しました: {e}"
         print(f"❌ PDF生成フロー中に{error_message}")
         return None, None, error_message
-    finally:
-        pythoncom.CoUninitialize()
 
 

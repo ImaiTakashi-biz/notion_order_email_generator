@@ -2,6 +2,9 @@ import os
 import sys
 import queue
 import threading
+import tempfile
+import shutil
+import pythoncom
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, ttk
 import keyring
@@ -206,6 +209,10 @@ class Application(ttk.Frame):
         self.q = queue.Queue()
         self.queue_io = QueueIO(self.q)
         
+        # --- 一時フォルダと事前生成PDFの管理 ---
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.pregenerated_pdfs = {}
+
         # --- 状態管理 ---
         self.processing = False
         self.order_data = []
@@ -359,19 +366,73 @@ class Application(ttk.Frame):
         if not selected_iid or self.processing: return
         self.middle_pane.supplier_listbox.selection_set(selected_iid)
         selected_supplier = self.middle_pane.supplier_listbox.item(selected_iid, 'values')[0]
+        
         if selected_supplier in self.sent_suppliers:
             self.clear_preview()
             return
-        self.processing = True
-        self.toggle_buttons(False)
-        self.start_spinner()
-        self.middle_pane.update_table_for_supplier(selected_supplier)
-        threading.Thread(target=self.run_thread, args=(self.pdf_creation_flow_task,)).start()
-        self.master.after(config.AppConstants.QUEUE_CHECK_INTERVAL, self.check_queue)
+
+        # 事前生成されたPDFのパスを取得
+        pdf_path = self.pregenerated_pdfs.get(selected_supplier)
+        items = self.orders_by_supplier.get(selected_supplier, [])
+
+        if pdf_path and items:
+            # プレビューを即時更新
+            self.update_preview_ui((items[0], pdf_path))
+            self.log(f"\n「{selected_supplier}」のプレビューを表示しました。", "emphasis")
+        elif not items:
+            self.log(f"エラー: 「{selected_supplier}」の注文アイテムが見つかりません。", "error")
+            self.clear_preview()
+        else:
+            self.log("PDFはまだ準備中です。少し待ってからもう一度お試しください。", "emphasis")
+            self.clear_preview()
 
     def send_single_mail(self):
         if self.processing or not self.current_pdf_path: return
+        
+        selected_iids = self.middle_pane.supplier_listbox.selection()
+        if not selected_iids: return
+        selected_supplier = self.middle_pane.supplier_listbox.item(selected_iids[0], 'values')[0]
+
+    def send_single_mail(self):
+        if self.processing or not self.current_pdf_path: return
+        
+        selected_iids = self.middle_pane.supplier_listbox.selection()
+        if not selected_iids: return
+        selected_supplier = self.middle_pane.supplier_listbox.item(selected_iids[0], 'values')[0]
+
+        # PDFを本保存先にコピー
+        try:
+            # --- 保存先パスの計算ロジックを追加 ---
+            base_dest_dir = config.PDF_SAVE_DIR
+            final_dest_dir = base_dest_dir
+            
+            # 部署が単一選択されているか確認
+            selected_department = self.selected_departments[0] if len(self.selected_departments) == 1 else None
+            if selected_department:
+                department_dir = os.path.join(base_dest_dir, selected_department)
+                os.makedirs(department_dir, exist_ok=True) # フォルダがなければ作成
+                final_dest_dir = department_dir
+
+            # 最終的なパスを構築
+            final_dest_path = os.path.join(final_dest_dir, os.path.basename(self.current_pdf_path))
+            # --- ここまで ---
+
+            shutil.copy2(self.current_pdf_path, final_dest_path)
+            self.log(f"注文書を正式な保存先にコピーしました: {final_dest_path}")
+        except Exception as e:
+            messagebox.showerror("ファイルコピーエラー", f"PDFを保存フォルダにコピーできませんでした。\n{e}")
+            return
+
         if not messagebox.askyesno("メール送信確認", f"{self.bottom_pane.to_var.get()} 宛にメールを送信します。よろしいですか？"): return
+        
+        self.processing = True
+        self.toggle_buttons(False)
+        self.start_spinner()
+        threading.Thread(target=self.run_thread, args=(self.send_mail_task,)).start()
+        self.master.after(config.AppConstants.QUEUE_CHECK_INTERVAL, self.check_queue)
+
+        if not messagebox.askyesno("メール送信確認", f"{self.bottom_pane.to_var.get()} 宛にメールを送信します。よろしいですか？"): return
+        
         self.processing = True
         self.toggle_buttons(False)
         self.start_spinner()
@@ -396,6 +457,7 @@ class Application(ttk.Frame):
 
     def on_closing(self):
         if self.processing: return messagebox.showwarning("処理中", "処理が実行中です。終了できません。")
+        self.cleanup()
         self.master.destroy()
 
     # --- スレッドタスク ---
@@ -423,47 +485,7 @@ class Application(ttk.Frame):
         self.log(f"✅ 完了 ({order_count}件の要発注データが見つかりました)")
         self.q.put(("update_data_ui", processed_data))
 
-    def pdf_creation_flow_task(self):
-        # --- 必要な情報をUIスレッドから取得 ---
-        account_key = self.display_name_to_key_map.get(self.selected_account_display_name.get())
-        if not account_key:
-            self.log("エラー: 送信者アカウントが選択されていません。", "error")
-            return self.q.put(("task_complete", None))
-        
-        sender_creds = self.accounts[account_key]
-        sender_info = {"name": sender_creds.get("display_name", account_key), "email": sender_creds["sender"]}
-        
-        selected_iids = self.middle_pane.supplier_listbox.selection()
-        if not selected_iids: 
-            self.log("エラー: PDF作成対象の仕入先が選択されていません。", "error")
-            return self.q.put(("task_complete", None))
-            
-        selected_supplier = self.middle_pane.supplier_listbox.item(selected_iids[0], 'values')[0]
-        items = self.orders_by_supplier.get(selected_supplier, [])
-        selected_department_for_pdf = self.selected_departments[0] if len(self.selected_departments) == 1 else None
 
-        self.log("\n----------------------------------------")
-        self.log("STEP 4: 注文書PDFの作成")
-        self.log("----------------------------------------")
-        self.log(f"「{selected_supplier}」の注文書を作成しています...")
-
-        # --- 専門家に関数を依頼 ---
-        pdf_path, info, error_message = pdf_generator.generate_order_pdf_flow(
-            selected_supplier,
-            items,
-            sender_info,
-            selected_department=selected_department_for_pdf
-        )
-
-        if error_message:
-            self.log(f"❌ PDF作成に失敗しました: {error_message}", "error")
-            self.q.put(("task_complete", None))
-        elif pdf_path and info:
-            self.q.put(("update_preview_ui", (info, pdf_path)))
-        else:
-            # 念のためのフォールバック
-            self.log("❌ PDF作成に失敗しました。不明なエラーです。", "error")
-            self.q.put(("task_complete", None))
 
     def send_mail_task(self):
         # --- 必要な情報をUIスレッドから取得 ---
@@ -503,6 +525,44 @@ class Application(ttk.Frame):
         notion_api.update_notion_pages(page_ids)
         supplier = next((item["supplier_name"] for item in self.order_data if item["page_id"] == page_ids[0]), None)
         if supplier: self.q.put(("mark_as_sent_after_update", supplier))
+
+    def pregenerate_pdfs_task(self):
+        """全ての仕入先のPDFをバックグラウンドで事前生成する"""
+        pythoncom.CoInitialize() # スレッドの開始時に一度だけ初期化
+        try:
+            self.log("\n----------------------------------------")
+            self.log("STEP 3a: 注文書をバックグラウンドで準備中...")
+            self.log("----------------------------------------")
+            
+            account_key = self.display_name_to_key_map.get(self.selected_account_display_name.get())
+            if not account_key: 
+                self.log("エラー: 送信者アカウントが不明なため、PDFの事前生成を中止しました。", "error")
+                return
+
+            sender_creds = self.accounts[account_key]
+            sender_info = {"name": sender_creds.get("display_name", account_key), "email": sender_creds["sender"]}
+            selected_department_for_pdf = self.selected_departments[0] if len(self.selected_departments) == 1 else None
+
+            total_suppliers = len(self.orders_by_supplier)
+            for i, (supplier, items) in enumerate(self.orders_by_supplier.items()):
+                if not items:
+                    continue
+                self.log(f"  ({i+1}/{total_suppliers}) 「{supplier}」の注文書を準備中...")
+                pdf_path, _, error_message = pdf_generator.generate_order_pdf_flow(
+                    supplier,
+                    items,
+                    sender_info,
+                    selected_department=selected_department_for_pdf,
+                    save_dir=self.temp_dir.name # 一時フォルダに保存
+                )
+                if pdf_path:
+                    self.pregenerated_pdfs[supplier] = pdf_path
+                else:
+                    self.log(f"    -> 準備中にエラーが発生: {error_message}", "error")
+            self.log("✅ 全ての注文書の準備が完了しました。", "emphasis")
+        finally:
+            pythoncom.CoUninitialize() # スレッドの終了時に一度だけ解放
+
 
     # --- キュー処理 ---
     def check_queue(self):
@@ -555,7 +615,8 @@ class Application(ttk.Frame):
             self.log("STEP 3: 仕入先の選択")
             self.log("----------------------------------------")
             self.log("▼リストから仕入先を選択してください。", "emphasis")
-            self.log("  クリックすると注文書が自動作成されます。", "emphasis")
+            # PDFの事前生成をバックグラウンドで開始
+            threading.Thread(target=self.run_thread, args=(self.pregenerate_pdfs_task,)).start()
         
         self.q.put(("task_complete", None))
 
@@ -605,6 +666,14 @@ class Application(ttk.Frame):
     def clear_preview(self):
         self.bottom_pane.clear_preview()
         self.send_mail_button.config(state="disabled")
+
+    def cleanup(self):
+        """アプリケーション終了時にリソースをクリーンアップする"""
+        try:
+            self.temp_dir.cleanup()
+            print("一時フォルダをクリーンアップしました。")
+        except Exception as e:
+            print(f"一時フォルダのクリーンアップに失敗しました: {e}")
 
     def toggle_buttons(self, enabled):
         self.top_pane.toggle_buttons(enabled)
