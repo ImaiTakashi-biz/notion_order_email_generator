@@ -367,6 +367,9 @@ class Application(ttk.Frame):
         self.middle_pane.supplier_listbox.selection_set(selected_iid)
         selected_supplier = self.middle_pane.supplier_listbox.item(selected_iid, 'values')[0]
         
+        # 発注対象データテーブルを更新
+        self.middle_pane.update_table_for_supplier(selected_supplier)
+
         if selected_supplier in self.sent_suppliers:
             self.clear_preview()
             return
@@ -385,13 +388,6 @@ class Application(ttk.Frame):
         else:
             self.log("PDFはまだ準備中です。少し待ってからもう一度お試しください。", "emphasis")
             self.clear_preview()
-
-    def send_single_mail(self):
-        if self.processing or not self.current_pdf_path: return
-        
-        selected_iids = self.middle_pane.supplier_listbox.selection()
-        if not selected_iids: return
-        selected_supplier = self.middle_pane.supplier_listbox.item(selected_iids[0], 'values')[0]
 
     def send_single_mail(self):
         if self.processing or not self.current_pdf_path: return
@@ -422,14 +418,6 @@ class Application(ttk.Frame):
         except Exception as e:
             messagebox.showerror("ファイルコピーエラー", f"PDFを保存フォルダにコピーできませんでした。\n{e}")
             return
-
-        if not messagebox.askyesno("メール送信確認", f"{self.bottom_pane.to_var.get()} 宛にメールを送信します。よろしいですか？"): return
-        
-        self.processing = True
-        self.toggle_buttons(False)
-        self.start_spinner()
-        threading.Thread(target=self.run_thread, args=(self.send_mail_task,)).start()
-        self.master.after(config.AppConstants.QUEUE_CHECK_INTERVAL, self.check_queue)
 
         if not messagebox.askyesno("メール送信確認", f"{self.bottom_pane.to_var.get()} 宛にメールを送信します。よろしいですか？"): return
         

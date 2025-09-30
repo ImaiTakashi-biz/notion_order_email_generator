@@ -1,7 +1,7 @@
 notion-client==2.2.1
-openpyxl==3.2.0b1
+openpyxl==3.1.5
 python-dotenv==1.0.0
-pywin32==308
+pywin32==311
 requests==2.31.0
 keyring==25.2.1
 pytest==8.3.2

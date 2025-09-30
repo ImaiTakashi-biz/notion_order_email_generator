@@ -3,27 +3,24 @@ import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
+from typing import Dict, Any, Optional, List
 import config
 import keyring
 
 # アプリケーション識別のためのサービス名 (settings_gui.pyと合わせる)
 SERVICE_NAME = "NotionOrderApp"
 
-def send_smtp_mail(info, pdf_path, sender_creds, account_name, selected_department=None):
+def send_smtp_mail(info: Dict[str, Any], pdf_path: str, sender_creds: Dict[str, Any], account_name: str, selected_department: Optional[str] = None) -> bool:
     """
     SMTPサーバー経由でPDF添付メールを送信する
     """
     try:
-        # --- パスワードをkeyringから取得 ---
+        # --- パスワードをsender_credsから取得 ---
         sender_email = sender_creds.get("sender")
-        if not sender_email:
-            print("❌ メール送信エラー: 送信元メールアドレスが不明です。")
-            return False
+        password = sender_creds.get("password")
 
-        password = keyring.get_password(SERVICE_NAME, sender_email)
-        if not password:
-            print(f"❌ メール送信エラー: {sender_email} のパスワードがキーチェーンに見つかりません。")
-            print("   -> 設定画面からパスワードを再設定してください。")
+        if not sender_email or not password:
+            print("❌ メール送信エラー: 送信元メールアドレスまたはパスワードが不明です。")
             return False
         # --- ここまでが変更点 ---
 
@@ -103,7 +100,7 @@ Email: {sender_creds["sender"]}
         print(f"❌ メール送信中に予期せぬエラーが発生しました: {e}")
         return False
 
-def prepare_and_send_order_email(account_key, sender_creds, items, pdf_path, selected_department=None):
+def prepare_and_send_order_email(account_key: str, sender_creds: Dict[str, Any], items: List[Dict[str, Any]], pdf_path: str, selected_department: Optional[str] = None) -> bool:
     """
     UIからの情報をもとにメール送信の準備と実行を行う
     """

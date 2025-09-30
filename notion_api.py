@@ -4,37 +4,38 @@ import time
 from datetime import datetime
 from notion_client import Client
 import config
+import concurrent.futures
+from typing import List, Dict, Any, Optional, Union
 
 # Notionクライアントの初期化
 notion = notion_client.Client(auth=config.NOTION_API_TOKEN)
-import concurrent.futures
 
 # --- 安全なデータ取得のためのヘルパー関数群 ---
 
-def _get_safe_text(prop_list):
+def _get_safe_text(prop_list: List[Dict[str, Any]]) -> str:
     """rich_textまたはtitleのリストから安全にテキストを取得する"""
     if prop_list and isinstance(prop_list, list) and len(prop_list) > 0:
         return prop_list[0].get('plain_text', '')
     return ''
 
-def _get_safe_email(prop):
+def _get_safe_email(prop: Optional[Dict[str, Any]]) -> str:
     """emailプロパティから安全に値を取得する"""
     return prop.get('email') if prop else ''
 
-def _get_safe_number(prop):
+def _get_safe_number(prop: Optional[Dict[str, Any]]) -> Union[int, float]:
     """numberプロパティから安全に値を取得する"""
     return prop.get('number', 0) if prop else 0
 
 
-def _get_all_pages_from_db(notion_client, database_id, filter_params=None):
+def _get_all_pages_from_db(notion_client: Client, database_id: str, filter_params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     指定されたデータベースからすべてのページを取得する（ページネーション対応）。
     オプションでフィルターを適用可能。簡易リトライ付き。
     """
-    all_results = []
-    next_cursor = None
+    all_results: List[Dict[str, Any]] = []
+    next_cursor: Optional[str] = None
     while True:
-        query_args = {
+        query_args: Dict[str, Any] = {
             "database_id": database_id,
             "start_cursor": next_cursor
         }
@@ -51,6 +52,9 @@ def _get_all_pages_from_db(notion_client, database_id, filter_params=None):
                     # 最終試行で失敗したら部分結果を返す
                     return all_results
                 time.sleep(config.AppConstants.NOTION_API_DELAY * (attempt + 1))
+        
+        if not query_res: # query_resがNoneのままループを抜けた場合
+            return all_results
 
         all_results.extend(query_res.get("results", []))
         if not query_res.get("has_more"):
@@ -58,7 +62,7 @@ def _get_all_pages_from_db(notion_client, database_id, filter_params=None):
         next_cursor = query_res.get("next_cursor")
     return all_results
 
-def get_order_data_from_notion(department_names=None):
+def get_order_data_from_notion(department_names: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Notionから「要発注」ステータスの注文データを効率的に取得する。
     部署名によるフィルタリング機能を追加。
@@ -68,8 +72,8 @@ def get_order_data_from_notion(department_names=None):
         return {"orders": [], "unlinked_count": 0}
 
     notion = Client(auth=config.NOTION_API_TOKEN)
-    order_list = []
-    unlinked_count = 0
+    order_list: List[Dict[str, Any]] = []
+    unlinked_count: int = 0
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             future_suppliers = executor.submit(_get_all_pages_from_db, notion, config.NOTION_SUPPLIER_DATABASE_ID)
@@ -85,7 +89,7 @@ def get_order_data_from_notion(department_names=None):
                     for name in department_names
                 ]
                 department_filter_condition = department_filters[0] if len(department_filters) == 1 else {"or": department_filters}
-                final_filter = {"and": [base_filter, department_filter_condition]}
+                final_filter: Dict[str, Any] = {"and": [base_filter, department_filter_condition]}
             else:
                 final_filter = base_filter
 
@@ -139,7 +143,7 @@ def get_order_data_from_notion(department_names=None):
         
     return {"orders": order_list, "unlinked_count": unlinked_count}
 
-def update_notion_pages(page_ids):
+def update_notion_pages(page_ids: List[str]) -> None:
     """
     メール送信済みのNotionページの「発注日」を今日の日付に更新する
     """
@@ -155,7 +159,7 @@ def update_notion_pages(page_ids):
         except Exception as e:
             print(f"❌ Notionページの更新に失敗しました (ID: {page_id}): {e}")
 
-def fetch_and_process_orders(department_names=None):
+def fetch_and_process_orders(department_names: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Notionからデータを取得し、仕入先ごとにグループ化する
     """
@@ -167,7 +171,7 @@ def fetch_and_process_orders(department_names=None):
     unlinked_count = raw_data.get("unlinked_count", 0)
 
     # ステップ2: 仕入先ごとにグループ化
-    grouped_orders = defaultdict(list)
+    grouped_orders: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for order in orders:
         supplier_name = order.get("supplier_name")
         if supplier_name:
@@ -179,4 +183,3 @@ def fetch_and_process_orders(department_names=None):
         "all_orders": orders,
         "unlinked_count": unlinked_count
     }
-

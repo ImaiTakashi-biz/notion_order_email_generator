@@ -3,10 +3,18 @@ import re
 from datetime import datetime
 import win32com.client as win32
 import pythoncom
+from typing import List, Dict, Any, Optional, Tuple
 
 import config
 
-def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_department=None, save_dir=None):
+def create_order_pdf(
+    supplier_name: str,
+    items: List[Dict[str, Any]],
+    sales_contact: str,
+    sender_info: Dict[str, str],
+    selected_department: Optional[str] = None,
+    save_dir: Optional[str] = None
+) -> Optional[str]:
     """
     Excelテンプレートから注文書PDFを作成する内部関数。
     win32comを使用するため、Windows環境とExcelのインストールが必要。
@@ -38,14 +46,14 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         else:
             ws.Range(cells['SENDER_NAME']).Value = f"'担当：{sender_info['name']}"
             
-        ws.Range(cells['SENDER_EMAIL']).Value = f"'{sender_info["email"]}"
+        ws.Range(cells['SENDER_EMAIL']).Value = f"'{sender_info['email']}"
 
         for i, item in enumerate(items):
             row = cells['ITEM_START_ROW'] + i
             # Formula Injection対策: 値の先頭にシングルクォートを付与
-            ws.Range(f"A{row}").Value = f"'{item.get("db_part_number", "")}"
-            ws.Range(f"B{row}").Value = f"'{item.get("maker_name", "")}"
-            ws.Range(f"C{row}").Value = f"'{item.get("quantity", 0)}"
+            ws.Range(f"A{row}").Value = f"'{item.get('db_part_number', '')}"
+            ws.Range(f"B{row}").Value = f"'{item.get('maker_name', '')}"
+            ws.Range(f"C{row}").Value = f"'{item.get('quantity', 0)}"
         
         # PDFのファイルパスを生成
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -54,6 +62,9 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         
         # 保存ディレクトリを決定 (引数が優先)
         base_save_dir = save_dir if save_dir is not None else config.PDF_SAVE_DIR
+        
+        if not base_save_dir: # base_save_dirがNoneや空文字列の場合のフォールバック
+            return None
 
         # 部署ごとのサブフォルダを考慮
         target_save_dir = base_save_dir
@@ -84,9 +95,17 @@ def create_order_pdf(supplier_name, items, sales_contact, sender_info, selected_
         return None
     finally:
         if 'excel' in locals() and excel is not None:
+            if workbook:
+                workbook.Close(SaveChanges=False)
             excel.Quit()
 
-def generate_order_pdf_flow(supplier_name, items, sender_info, selected_department=None, save_dir=None):
+def generate_order_pdf_flow(
+    supplier_name: str,
+    items: List[Dict[str, Any]],
+    sender_info: Dict[str, str],
+    selected_department: Optional[str] = None,
+    save_dir: Optional[str] = None
+) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
     """
     UIからの情報を受け取り、PDF作成のフロー全体を管理する
     """
@@ -117,5 +136,3 @@ def generate_order_pdf_flow(supplier_name, items, sender_info, selected_departme
         error_message = f"予期せぬエラーが発生しました: {e}"
         print(f"❌ PDF生成フロー中に{error_message}")
         return None, None, error_message
-
-
