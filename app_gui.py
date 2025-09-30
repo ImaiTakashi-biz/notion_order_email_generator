@@ -525,6 +525,7 @@ class Application(ttk.Frame):
             account_key = self.display_name_to_key_map.get(self.selected_account_display_name.get())
             if not account_key: 
                 self.log("エラー: 送信者アカウントが不明なため、PDFの事前生成を中止しました。", "error")
+                self.q.put(("task_complete", None))
                 return
 
             sender_creds = self.accounts[account_key]
@@ -548,6 +549,7 @@ class Application(ttk.Frame):
                 else:
                     self.log(f"    -> 準備中にエラーが発生: {error_message}", "error")
             self.log("✅ 全ての注文書の準備が完了しました。", "emphasis")
+            self.q.put(("task_complete", None))
         finally:
             pythoncom.CoUninitialize() # スレッドの終了時に一度だけ解放
 
@@ -598,15 +600,15 @@ class Application(ttk.Frame):
         
         if not all_orders:
             self.log("-> 発注対象のデータは見つかりませんでした。")
+            self.q.put(("task_complete", None))
         else:
             self.log("\n----------------------------------------")
             self.log("STEP 3: 仕入先の選択")
             self.log("----------------------------------------")
             self.log("▼リストから仕入先を選択してください。", "emphasis")
             # PDFの事前生成をバックグラウンドで開始
+            self.start_spinner()
             threading.Thread(target=self.run_thread, args=(self.pregenerate_pdfs_task,)).start()
-        
-        self.q.put(("task_complete", None))
 
     def update_preview_ui(self, data):
         info, pdf_path = data
