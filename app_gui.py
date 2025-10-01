@@ -665,9 +665,8 @@ class Application(ttk.Frame):
         """アプリケーション終了時にリソースをクリーンアップする"""
         try:
             self.temp_dir.cleanup()
-            print("一時フォルダをクリーンアップしました。")
-        except Exception as e:
-            print(f"一時フォルダのクリーンアップに失敗しました: {e}")
+        except Exception:
+            pass
 
     def toggle_buttons(self, enabled):
         self.top_pane.toggle_buttons(enabled)

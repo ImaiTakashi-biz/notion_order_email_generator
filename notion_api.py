@@ -13,10 +13,10 @@ notion = notion_client.Client(auth=config.NOTION_API_TOKEN)
 # --- 安全なデータ取得のためのヘルパー関数群 ---
 
 def _get_safe_text(prop_list: List[Dict[str, Any]]) -> str:
-    """rich_textまたはtitleのリストから安全にテキストを取得する"""
-    if prop_list and isinstance(prop_list, list) and len(prop_list) > 0:
-        return prop_list[0].get('plain_text', '')
-    return ''
+    """rich_textまたはtitleのリストから全てのテキストを連結して取得する"""
+    if not prop_list or not isinstance(prop_list, list):
+        return ''
+    return ''.join([item.get('plain_text', '') for item in prop_list])
 
 def _get_safe_email(prop: Optional[Dict[str, Any]]) -> str:
     """emailプロパティから安全に値を取得する"""
@@ -156,10 +156,10 @@ def update_notion_pages(page_ids: List[str]) -> None:
                 page_id=page_id,
                 properties={"発注日": {"date": {"start": today}}}
             )
-            print(f"✅ Notionページ (ID: {page_id}) の発注日を更新しました。")
             time.sleep(config.AppConstants.NOTION_API_DELAY)
-        except Exception as e:
-            print(f"❌ Notionページの更新に失敗しました (ID: {page_id}): {e}")
+        except Exception:
+            # エラーが発生しても処理を継続
+            pass
 
 def fetch_and_process_orders(department_names: Optional[List[str]] = None) -> Dict[str, Any]:
     """

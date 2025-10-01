@@ -129,13 +129,19 @@ def create_order_pdf(
         table_header = [Paragraph(h, styles['Center_J']) for h in ["品番（品名）", "メーカー", "数量", "回答納期", "備考"]]
         table_data = [table_header]
         
+        url_pattern = r'(https?://[\w\-./?%&=]+)'
+
         for item in items:
+            remarks_text = str(item.get('remarks', ''))
+            # URLを検出し、ハイパーリンクに変換
+            linked_remarks = re.sub(url_pattern, r'<a href="\1" color="blue">\1</a>', remarks_text)
+
             row = [
                 Paragraph(str(item.get('db_part_number', '')), styles['Normal_J']),
                 Paragraph(str(item.get('maker_name', '')), styles['Normal_J']),
                 Paragraph(str(item.get('quantity', 0)), styles['Center_J']),
                 '',  # 回答納期 (空欄)
-                Paragraph(str(item.get('remarks', '')), styles['Normal_J'])   # 備考
+                Paragraph(linked_remarks, styles['Normal_J'])   # 備考
             ]
             table_data.append(row)
 
