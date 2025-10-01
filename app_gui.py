@@ -4,7 +4,6 @@ import queue
 import threading
 import tempfile
 import shutil
-import pythoncom
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, ttk
 import keyring
@@ -516,42 +515,47 @@ class Application(ttk.Frame):
 
     def pregenerate_pdfs_task(self):
         """全ての仕入先のPDFをバックグラウンドで事前生成する"""
-        pythoncom.CoInitialize() # スレッドの開始時に一度だけ初期化
-        try:
-            self.log("\n----------------------------------------")
-            self.log("STEP 3a: 注文書をバックグラウンドで準備中...")
-            self.log("----------------------------------------")
-            
-            account_key = self.display_name_to_key_map.get(self.selected_account_display_name.get())
-            if not account_key: 
-                self.log("エラー: 送信者アカウントが不明なため、PDFの事前生成を中止しました。", "error")
-                self.q.put(("task_complete", None))
-                return
-
-            sender_creds = self.accounts[account_key]
-            sender_info = {"name": sender_creds.get("display_name", account_key), "email": sender_creds["sender"]}
-            selected_department_for_pdf = self.selected_departments[0] if len(self.selected_departments) == 1 else None
-
-            total_suppliers = len(self.orders_by_supplier)
-            for i, (supplier, items) in enumerate(self.orders_by_supplier.items()):
-                if not items:
-                    continue
-                self.log(f"  ({i+1}/{total_suppliers}) 「{supplier}」の注文書を準備中...")
-                pdf_path, _, error_message = pdf_generator.generate_order_pdf_flow(
-                    supplier,
-                    items,
-                    sender_info,
-                    selected_department=selected_department_for_pdf,
-                    save_dir=self.temp_dir.name # 一時フォルダに保存
-                )
-                if pdf_path:
-                    self.pregenerated_pdfs[supplier] = pdf_path
-                else:
-                    self.log(f"    -> 準備中にエラーが発生: {error_message}", "error")
-            self.log("✅ 全ての注文書の準備が完了しました。", "emphasis")
+        self.log("\n----------------------------------------")
+        self.log("STEP 3a: 注文書をバックグラウンドで準備中...")
+        self.log("----------------------------------------")
+        
+        account_key = self.display_name_to_key_map.get(self.selected_account_display_name.get())
+        if not account_key: 
+            self.log("エラー: 送信者アカウントが不明なため、PDFの事前生成を中止しました。", "error")
             self.q.put(("task_complete", None))
-        finally:
-            pythoncom.CoUninitialize() # スレッドの終了時に一度だけ解放
+            return
+
+        sender_creds = self.accounts[account_key]
+        
+        # 部署ごとのガイダンス番号を取得し、数字のみを抽出
+        department_guidance_numbers = config.load_department_guidance_numbers()
+        selected_department_for_pdf = self.selected_departments[0] if len(self.selected_departments) == 1 else None
+        raw_guidance = department_guidance_numbers.get(selected_department_for_pdf, "")
+        guidance_number = "".join(filter(str.isdigit, raw_guidance))
+
+        sender_info = {
+            "name": sender_creds.get("display_name", account_key), 
+            "email": sender_creds["sender"],
+            "guidance_number": guidance_number
+        }
+
+        total_suppliers = len(self.orders_by_supplier)
+        for i, (supplier, items) in enumerate(self.orders_by_supplier.items()):
+            if not items:
+                continue
+            pdf_path, _, error_message = pdf_generator.generate_order_pdf_flow(
+                supplier,
+                items,
+                sender_info,
+                selected_department=selected_department_for_pdf,
+                save_dir=self.temp_dir.name # 一時フォルダに保存
+            )
+            if pdf_path:
+                self.pregenerated_pdfs[supplier] = pdf_path
+            else:
+                self.log(f"    -> 準備中にエラーが発生: {error_message}", "error")
+        self.log("✅ 全ての注文書の準備が完了しました。", "emphasis")
+        self.q.put(("task_complete", None))
 
 
     # --- キュー処理 ---

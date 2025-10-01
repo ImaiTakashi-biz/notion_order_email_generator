@@ -121,6 +121,7 @@ def get_order_data_from_notion(department_names: Optional[List[str]] = None) -> 
             maker = _get_safe_text(props.get("メーカー名", {}).get("rich_text")).strip()
             part_number = _get_safe_text(props.get("DB品番", {}).get("rich_text")).strip()
             quantity = int(_get_safe_number(props.get("数量")) or 0)
+            remarks = _get_safe_text(props.get("備考", {}).get("rich_text")).strip()
             supplier_name = _get_safe_text(supplier_props.get("購入先", {}).get("title")).strip()
             sales_contact = _get_safe_text(supplier_props.get("営業担当", {}).get("rich_text")).strip()
             email_to = (_get_safe_email(supplier_props.get("メール")) or "").strip()
@@ -135,6 +136,7 @@ def get_order_data_from_notion(department_names: Optional[List[str]] = None) -> 
                 "sales_contact": sales_contact,
                 "email": email_to,
                 "email_cc": email_cc,
+                "remarks": remarks,
             })
         
     except Exception as e:

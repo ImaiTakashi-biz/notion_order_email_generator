@@ -49,10 +49,9 @@ def send_smtp_mail(info: Dict[str, Any], pdf_path: str, sender_creds: Dict[str, 
 
         # ガイダンス番号を取得
         guidance_numbers = config.load_department_guidance_numbers()
-        guidance_number = guidance_numbers.get(selected_department, "")
-        tel_with_guidance = company['tel']
-        if guidance_number:
-            tel_with_guidance = f"{company['tel']} ({guidance_number})"
+        raw_guidance = guidance_numbers.get(selected_department, "")
+        guidance_number = "".join(filter(str.isdigit, raw_guidance))
+        tel_line = f"TEL: {company['tel_base']}" + (f"（ガイダンス{guidance_number}番）" if guidance_number else "")
 
         # メール本文 (署名を動的に生成)
         body = f"""{info['supplier_name']}
@@ -64,11 +63,10 @@ def send_smtp_mail(info: Dict[str, Any], pdf_path: str, sender_creds: Dict[str, 
 ∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝
 {company['name']}
 発注担当： {order_contact}
-{company['postal_code']}
-{company['address']}
+{company['postal_code']} {company['address']}
 Email: {sender_creds["sender"]}
-{tel_with_guidance}
-{company['fax']}
+{tel_line}
+URL: {company['url']}
 ∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝"""
         msg.attach(MIMEText(body, 'plain'))
 

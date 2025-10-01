@@ -34,7 +34,6 @@ SMTP_SERVER: str = _settings.get("smtp_server", "smtp.office365.com")
 SMTP_PORT: int = int(_settings.get("smtp_port", 587))
 
 # パス設定 (.envから)
-EXCEL_TEMPLATE_PATH: str = os.getenv("EXCEL_TEMPLATE_PATH", "")
 PDF_SAVE_DIR: str = os.getenv("PDF_SAVE_DIR", "")
 
 # アプリケーション定数
@@ -46,22 +45,13 @@ class AppConstants:
     # Notion API関連
     NOTION_API_DELAY: float = 0.35       # 秒
     
-    # Excel関連
-    EXCEL_CELLS: Dict[str, Any] = {
-        'SUPPLIER_NAME': 'A5',
-        'SALES_CONTACT': 'A7', 
-        'SENDER_NAME': 'D8',
-        'SENDER_EMAIL': 'D14',
-        'ITEM_START_ROW': 16
-    }
-    
     # 会社情報
     COMPANY_INFO: Dict[str, str] = {
         'name': '株式会社 新井精密',
         'postal_code': '〒368-0061',
-        'address': '埼玉県秩父市小柱670番地',
-        'tel': 'TEL: 0494-26-7786',
-        'fax': 'FAX: 0494-26-7787'
+        'address': '埼玉県秩父市小柱670',
+        'tel_base': '0494-26-7786',
+        'url': 'http://araiseimitsu.com/'
     }
     
     # メールテンプレート
@@ -106,17 +96,12 @@ def validate_config() -> Tuple[bool, List[str]]:
         "NOTION_API_TOKEN": NOTION_API_TOKEN,
         "NOTION_DATABASE_ID": PAGE_ID_CONTAINING_DB,
         "NOTION_SUPPLIER_DATABASE_ID": NOTION_SUPPLIER_DATABASE_ID,
-        "EXCEL_TEMPLATE_PATH": EXCEL_TEMPLATE_PATH,
         "PDF_SAVE_DIR": PDF_SAVE_DIR
     }
     
     for var_name, var_value in required_env_vars.items():
         if not var_value:
             errors.append(f"環境変数 {var_name} が設定されていません")
-    
-    # ファイル存在チェック
-    if EXCEL_TEMPLATE_PATH and not os.path.exists(EXCEL_TEMPLATE_PATH):
-        errors.append(f"Excelテンプレートファイルが見つかりません: {EXCEL_TEMPLATE_PATH}")
     
     if PDF_SAVE_DIR and not os.path.exists(PDF_SAVE_DIR):
         try:
