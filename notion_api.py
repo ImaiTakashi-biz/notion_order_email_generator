@@ -1,122 +1,153 @@
-import notion_client
-import os
-import time
-from datetime import datetime
-from notion_client import Client
-import config
 import concurrent.futures
-from typing import List, Dict, Any, Optional, Union
+import threading
+import time
+from collections import defaultdict
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
 
-# Notionクライアントの初期化
-notion = notion_client.Client(auth=config.NOTION_API_TOKEN)
+import notion_client
+from notion_client import Client
 
-# --- 安全なデータ取得のためのヘルパー関数群 ---
+import config
+
+_NOTION_LOCK = threading.Lock()
+_NOTION_CLIENT: Optional[Client] = None
+_NOTION_TOKEN: Optional[str] = None
+
+
+def _get_notion_client() -> Client:
+    """
+    Notionクライアントをキャッシュし、トークン変更時のみ再生成する。
+    """
+    global _NOTION_CLIENT, _NOTION_TOKEN
+    token = config.NOTION_API_TOKEN
+    if _NOTION_CLIENT is None or token != _NOTION_TOKEN:
+        _NOTION_CLIENT = notion_client.Client(auth=token)
+        _NOTION_TOKEN = token
+    return _NOTION_CLIENT
+
 
 def _get_safe_text(prop_list: List[Dict[str, Any]]) -> str:
-    """rich_textまたはtitleのリストから全てのテキストを連結して取得する"""
+    """rich_text/title プロパティからテキストを安全に抽出する。"""
     if not prop_list or not isinstance(prop_list, list):
-        return ''
-    return ''.join([item.get('plain_text', '') for item in prop_list])
+        return ""
+    return "".join(item.get("plain_text", "") for item in prop_list)
+
 
 def _get_safe_email(prop: Optional[Dict[str, Any]]) -> str:
-    """emailプロパティから安全に値を取得する"""
-    return prop.get('email') if prop else ''
+    """email プロパティからアドレスを安全に抽出する。"""
+    return (prop or {}).get("email", "")
+
 
 def _get_safe_number(prop: Optional[Dict[str, Any]]) -> Union[int, float]:
-    """numberプロパティから安全に値を取得する"""
-    return prop.get('number', 0) if prop else 0
+    """number プロパティから値を安全に抽出する。"""
+    return (prop or {}).get("number", 0)
 
 
-def _get_all_pages_from_db(notion_client: Client, database_id: str, filter_params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+def _get_all_pages_from_db(
+    client: Client,
+    database_id: str,
+    filter_params: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
     """
-    指定されたデータベースからすべてのページを取得する（ページネーション対応）。
-    オプションでフィルターを適用可能。簡易リトライ付き。
+    指定したデータベースから全ページを取得する。簡易リトライ付き。
     """
     all_results: List[Dict[str, Any]] = []
     next_cursor: Optional[str] = None
+
     while True:
-        query_args: Dict[str, Any] = {
-            "database_id": database_id,
-            "start_cursor": next_cursor
-        }
+        query_args: Dict[str, Any] = {"database_id": database_id, "start_cursor": next_cursor}
         if filter_params:
             query_args["filter"] = filter_params
 
-        query_res = None
+        query_res: Optional[Dict[str, Any]] = None
         for attempt in range(3):
             try:
-                query_res = notion_client.databases.query(**query_args)
+                with _NOTION_LOCK:
+                    query_res = client.databases.query(**query_args)
                 break
             except Exception:
                 if attempt == 2:
-                    # 最終試行で失敗したら部分結果を返す
                     return all_results
                 time.sleep(config.AppConstants.NOTION_API_DELAY * (attempt + 1))
-        
-        if not query_res: # query_resがNoneのままループを抜けた場合
+
+        if not query_res:
             return all_results
 
         all_results.extend(query_res.get("results", []))
         if not query_res.get("has_more"):
             break
         next_cursor = query_res.get("next_cursor")
+
     return all_results
+
 
 def get_order_data_from_notion(department_names: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Notionから「要発注」ステータスの注文データを効率的に取得する。
-    部署名によるフィルタリング機能を追加。
-    仕入先がリンクされていない項目をカウントして返す。
+    発注対象データを Notion から取得する。
     """
-    if not all([config.NOTION_API_TOKEN, config.PAGE_ID_CONTAINING_DB, config.NOTION_SUPPLIER_DATABASE_ID]):
+    if not all(
+        [config.NOTION_API_TOKEN, config.PAGE_ID_CONTAINING_DB, config.NOTION_SUPPLIER_DATABASE_ID]
+    ):
         return {"orders": [], "unlinked_count": 0}
 
-    notion = Client(auth=config.NOTION_API_TOKEN)
+    client = _get_notion_client()
     order_list: List[Dict[str, Any]] = []
-    unlinked_count: int = 0
+    unlinked_count = 0
+
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            future_suppliers = executor.submit(_get_all_pages_from_db, notion, config.NOTION_SUPPLIER_DATABASE_ID)
-            
-            base_filter = {
+            future_suppliers = executor.submit(
+                _get_all_pages_from_db, client, config.NOTION_SUPPLIER_DATABASE_ID
+            )
+
+            base_filter: Dict[str, Any] = {
                 "property": "発注判定",
-                "formula": {"string": {"contains": "要発注"}}
+                "formula": {"string": {"contains": "要発注"}},
             }
 
             if department_names:
                 department_filters = [
-                    {"property": "部署名", "multi_select": {"contains": name}}
-                    for name in department_names
+                    {"property": "部署名", "multi_select": {"contains": name}} for name in department_names
                 ]
-                department_filter_condition = department_filters[0] if len(department_filters) == 1 else {"or": department_filters}
-                final_filter: Dict[str, Any] = {"and": [base_filter, department_filter_condition]}
+                department_condition = (
+                    department_filters[0] if len(department_filters) == 1 else {"or": department_filters}
+                )
+                final_filter: Dict[str, Any] = {"and": [base_filter, department_condition]}
             else:
                 final_filter = base_filter
 
-            future_orders = executor.submit(_get_all_pages_from_db, notion, config.PAGE_ID_CONTAINING_DB, filter_params=final_filter)
+            future_orders = executor.submit(
+                _get_all_pages_from_db, client, config.PAGE_ID_CONTAINING_DB, filter_params=final_filter
+            )
 
             all_suppliers = future_suppliers.result()
             order_pages = future_orders.result()
 
-        suppliers_map = {page['id']: page['properties'] for page in all_suppliers}
-        
+        suppliers_map = {page["id"]: page.get("properties", {}) for page in all_suppliers}
         if not order_pages:
             return {"orders": [], "unlinked_count": 0}
 
         for page in order_pages:
             props = page.get("properties", {})
-            
+
             supplier_relation = props.get("DB_仕入先リスト", {}).get("relation", [])
             if not supplier_relation:
                 unlinked_count += 1
                 continue
-            
+
             supplier_page_id = supplier_relation[0].get("id")
             supplier_props = suppliers_map.get(supplier_page_id)
-
             if not supplier_props:
                 unlinked_count += 1
                 continue
+
+            department_entries = props.get("部署名", {}).get("multi_select", [])
+            department_names_for_order = [
+                entry.get("name", "").strip()
+                for entry in department_entries
+                if isinstance(entry, dict) and entry.get("name")
+            ]
 
             maker = _get_safe_text(props.get("メーカー名", {}).get("rich_text")).strip()
             part_number = _get_safe_text(props.get("DB品番", {}).get("rich_text")).strip()
@@ -127,61 +158,55 @@ def get_order_data_from_notion(department_names: Optional[List[str]] = None) -> 
             email_to = (_get_safe_email(supplier_props.get("メール")) or "").strip()
             email_cc = (_get_safe_email(supplier_props.get("メール CC:")) or "").strip()
 
-            order_list.append({
-                "page_id": page["id"],
-                "maker_name": maker,
-                "db_part_number": part_number,
-                "quantity": quantity,
-                "supplier_name": supplier_name,
-                "sales_contact": sales_contact,
-                "email": email_to,
-                "email_cc": email_cc,
-                "remarks": remarks,
-            })
-        
-    except Exception as e:
-        # エラーが発生した場合も、空の状態で返す
+            order_list.append(
+                {
+                    "page_id": page["id"],
+                    "maker_name": maker,
+                    "db_part_number": part_number,
+                    "quantity": quantity,
+                    "supplier_name": supplier_name,
+                    "sales_contact": sales_contact,
+                    "email": email_to,
+                    "email_cc": email_cc,
+                    "remarks": remarks,
+                    "departments": department_names_for_order,
+                }
+            )
+
+    except Exception:
         return {"orders": [], "unlinked_count": 0}
-        
+
     return {"orders": order_list, "unlinked_count": unlinked_count}
+
 
 def update_notion_pages(page_ids: List[str]) -> None:
     """
-    メール送信済みのNotionページの「発注日」を今日の日付に更新する
+    対象ページの「発注日」を当日日付で更新する。
     """
+    client = _get_notion_client()
     today = datetime.now().strftime("%Y-%m-%d")
+
     for page_id in page_ids:
         try:
-            notion.pages.update(
-                page_id=page_id,
-                properties={"発注日": {"date": {"start": today}}}
-            )
+            with _NOTION_LOCK:
+                client.pages.update(page_id=page_id, properties={"発注日": {"date": {"start": today}}})
             time.sleep(config.AppConstants.NOTION_API_DELAY)
         except Exception:
-            # エラーが発生しても処理を継続
-            pass
+            continue
+
 
 def fetch_and_process_orders(department_names: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Notionからデータを取得し、仕入先ごとにグループ化する
+    Notionから取得したデータを仕入先単位でグルーピングして返す。
     """
-    from collections import defaultdict
-
-    # ステップ1: データを取得
     raw_data = get_order_data_from_notion(department_names)
     orders = raw_data.get("orders", [])
     unlinked_count = raw_data.get("unlinked_count", 0)
 
-    # ステップ2: 仕入先ごとにグループ化
     grouped_orders: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for order in orders:
         supplier_name = order.get("supplier_name")
         if supplier_name:
             grouped_orders[supplier_name].append(order)
 
-    # ステップ3: GUIが必要とする形式で結果を返す
-    return {
-        "orders_by_supplier": dict(grouped_orders),
-        "all_orders": orders,
-        "unlinked_count": unlinked_count
-    }
+    return {"orders_by_supplier": dict(grouped_orders), "all_orders": orders, "unlinked_count": unlinked_count}

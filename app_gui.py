@@ -4,6 +4,8 @@ import queue
 import threading
 import tempfile
 import shutil
+import contextlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, ttk
 import keyring
@@ -353,6 +355,7 @@ class Application(ttk.Frame):
     def start_data_retrieval(self):
         if self.processing: return
         self.selected_departments = [name for name, var in self.department_vars.items() if var.get()]
+        self.reset_temp_storage()
         self.processing = True
         self.toggle_buttons(False)
         self.clear_displays()
@@ -394,6 +397,19 @@ class Application(ttk.Frame):
         selected_iids = self.middle_pane.supplier_listbox.selection()
         if not selected_iids: return
         selected_supplier = self.middle_pane.supplier_listbox.item(selected_iids[0], 'values')[0]
+        items = self.orders_by_supplier.get(selected_supplier, [])
+        if not items:
+            messagebox.showerror("データなし", f"「{selected_supplier}」の注文データが見つかりません。")
+            return
+        supplier_departments = []
+        for item in items:
+            for dept in (item.get("departments") or []):
+                dept = dept.strip()
+                if dept and dept not in supplier_departments:
+                    supplier_departments.append(dept)
+        department_for_pdf = next((dept for dept in self.selected_departments if dept in supplier_departments), None)
+        if not department_for_pdf and supplier_departments:
+            department_for_pdf = supplier_departments[0]
 
         # PDFを本保存先にコピー
         try:
@@ -401,10 +417,9 @@ class Application(ttk.Frame):
             base_dest_dir = config.PDF_SAVE_DIR
             final_dest_dir = base_dest_dir
             
-            # 部署が単一選択されているか確認
-            selected_department = self.selected_departments[0] if len(self.selected_departments) == 1 else None
-            if selected_department:
-                department_dir = os.path.join(base_dest_dir, selected_department)
+            # 部署フォルダを補完
+            if department_for_pdf:
+                department_dir = os.path.join(base_dest_dir, department_for_pdf)
                 os.makedirs(department_dir, exist_ok=True) # フォルダがなければ作成
                 final_dest_dir = department_dir
 
@@ -449,15 +464,12 @@ class Application(ttk.Frame):
 
     # --- スレッドタスク ---
     def run_thread(self, task_func, *args):
-        original_stdout = sys.stdout
-        sys.stdout = self.queue_io
         try:
-            task_func(*args)
+            with contextlib.redirect_stdout(self.queue_io):
+                task_func(*args)
         except Exception as e:
             self.q.put(("log", f"\nスレッド処理中にエラーが発生しました: {e}", "error"))
             self.q.put(("task_complete", None))
-        finally:
-            sys.stdout = original_stdout
 
     def get_data_task(self):
         self.log("----------------------------------------")
@@ -477,35 +489,44 @@ class Application(ttk.Frame):
     def send_mail_task(self):
         # --- 必要な情報をUIスレッドから取得 ---
         account_key = self.display_name_to_key_map.get(self.selected_account_display_name.get())
-        if not account_key: 
+        if not account_key:
             self.log("エラー: 送信者アカウントが選択されていません。", "error")
             return self.q.put(("task_complete", None))
 
         sender_creds = self.accounts[account_key]
         selected_iids = self.middle_pane.supplier_listbox.selection()
-        if not selected_iids: 
+        if not selected_iids:
             self.log("エラー: 送信する仕入先が選択されていません。", "error")
             return self.q.put(("task_complete", None))
 
         selected_supplier = self.middle_pane.supplier_listbox.item(selected_iids[0], 'values')[0]
         items = self.orders_by_supplier.get(selected_supplier, [])
-        selected_department = next((dept for dept, var in self.department_vars.items() if var.get()), None)
+        supplier_departments = []
+        for item in items:
+            for dept in (item.get("departments") or []):
+                dept = dept.strip()
+                if dept and dept not in supplier_departments:
+                    supplier_departments.append(dept)
+        department_for_mail = next((dept for dept in self.selected_departments if dept in supplier_departments), None)
+        if not department_for_mail and supplier_departments:
+            department_for_mail = supplier_departments[0]
 
         self.log(f"「{selected_supplier}」宛にメールを送信中 (From: {sender_creds['sender']})...")
 
-        # --- 専門家に関数を依頼 ---
-        success = email_service.prepare_and_send_order_email(
+        success, error_message = email_service.prepare_and_send_order_email(
             account_key,
             sender_creds,
             items,
             self.current_pdf_path,
-            selected_department
+            department_for_mail
         )
 
         if success:
             self.q.put(("ask_and_update_notion", (selected_supplier, [item['page_id'] for item in items])))
         else:
-            self.log("❌ メール送信に失敗しました。ログを確認してください。", "error")
+            user_message = error_message or "メール送信に失敗しました。詳細はログを確認してください。"
+            self.log(f"✗ {user_message}", "error")
+            self.q.put(("email_error", user_message))
             self.q.put(("task_complete", None))
 
     def update_notion_task(self, page_ids):
@@ -520,40 +541,62 @@ class Application(ttk.Frame):
         self.log("----------------------------------------")
         
         account_key = self.display_name_to_key_map.get(self.selected_account_display_name.get())
-        if not account_key: 
+        if not account_key:
             self.log("エラー: 送信者アカウントが不明なため、PDFの事前生成を中止しました。", "error")
             self.q.put(("task_complete", None))
             return
 
         sender_creds = self.accounts[account_key]
-        
-        # 部署ごとのガイダンス番号を取得し、数字のみを抽出
         department_guidance_numbers = config.load_department_guidance_numbers()
-        selected_department_for_pdf = self.selected_departments[0] if len(self.selected_departments) == 1 else None
-        raw_guidance = department_guidance_numbers.get(selected_department_for_pdf, "")
-        guidance_number = "".join(filter(str.isdigit, raw_guidance))
 
-        sender_info = {
-            "name": sender_creds.get("display_name", account_key), 
-            "email": sender_creds["sender"],
-            "guidance_number": guidance_number
-        }
+        def resolve_departments(items):
+            departments = []
+            for item in items:
+                for dept in (item.get("departments") or []):
+                    dept = dept.strip()
+                    if dept and dept not in departments:
+                        departments.append(dept)
+            return departments
 
-        total_suppliers = len(self.orders_by_supplier)
-        for i, (supplier, items) in enumerate(self.orders_by_supplier.items()):
-            if not items:
-                continue
+        def render_pdf(supplier, items):
+            departments = resolve_departments(items)
+            department_for_pdf = next((dept for dept in self.selected_departments if dept in departments), None)
+            if not department_for_pdf and departments:
+                department_for_pdf = departments[0]
+            raw_guidance = department_guidance_numbers.get(department_for_pdf, "")
+            guidance_number = "".join(filter(str.isdigit, raw_guidance))
+            sender_info = {
+                "name": sender_creds.get("display_name", account_key),
+                "email": sender_creds["sender"],
+                "guidance_number": guidance_number
+            }
             pdf_path, _, error_message = pdf_generator.generate_order_pdf_flow(
                 supplier,
                 items,
                 sender_info,
-                selected_department=selected_department_for_pdf,
-                save_dir=self.temp_dir.name # 一時フォルダに保存
+                selected_department=department_for_pdf,
+                save_dir=self.temp_dir.name
             )
-            if pdf_path:
-                self.pregenerated_pdfs[supplier] = pdf_path
-            else:
-                self.log(f"    -> 準備中にエラーが発生: {error_message}", "error")
+            return supplier, pdf_path, error_message
+
+        futures = []
+        total_suppliers = len(self.orders_by_supplier)
+        max_workers = max(1, min(4, total_suppliers))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for supplier, items in self.orders_by_supplier.items():
+                if not items:
+                    continue
+                futures.append(executor.submit(render_pdf, supplier, items))
+            for future in as_completed(futures):
+                try:
+                    supplier, pdf_path, error_message = future.result()
+                except Exception as exc:
+                    self.log(f"    -> PDF準備中に例外が発生しました: {exc}", "error")
+                    continue
+                if pdf_path:
+                    self.pregenerated_pdfs[supplier] = pdf_path
+                else:
+                    self.log(f"    -> 準備中にエラーが発生: {error_message}", "error")
         self.log("✅ 全ての注文書の準備が完了しました。", "emphasis")
         self.q.put(("task_complete", None))
 
@@ -569,6 +612,7 @@ class Application(ttk.Frame):
                 elif command == "ask_and_update_notion": self.ask_and_update_notion(message[0], message[1])
                 elif command == "mark_as_sent_after_update": self.mark_as_sent(message)
                 elif command == "update_preview_ui": self.update_preview_ui(message)
+                elif command == "email_error": self.show_email_send_error(message)
                 elif command == "task_complete":
                     self.processing = False
                     self.toggle_buttons(True)
@@ -585,6 +629,20 @@ class Application(ttk.Frame):
     # --- UI更新メソッド ---
     def log(self, message, tag=None):
         self.bottom_pane.log(message, tag)
+
+    def show_email_send_error(self, message: str):
+        suggestion = "不明なエラーが発生しました。ログを確認してください。"
+        if "PDFファイルが見つかりません" in message:
+            suggestion = "一度プレビューを閉じてPDFを再生成してから再試行してください。"
+        elif "宛先メールアドレス" in message:
+            suggestion = "Notionの仕入先情報に宛先メールアドレスが設定されているか確認してください。"
+        elif "資格情報ストア" in message or "パスワード" in message:
+            suggestion = "[設定]画面で対象アカウントを開き、パスワードを再保存してください。"
+        elif "SMTP認証" in message:
+            suggestion = "メールアドレスとパスワードが正しいか確認した上で再試行してください。"
+        elif "接続できません" in message:
+            suggestion = "ネットワーク環境やSMTPサーバー設定を確認してください。"
+        messagebox.showerror("メール送信エラー", f"{message}\n\n対処ヒント: {suggestion}")
 
     def update_data_ui(self, processed_data):
         # 事前処理済みのデータを展開
@@ -660,6 +718,16 @@ class Application(ttk.Frame):
     def clear_preview(self):
         self.bottom_pane.clear_preview()
         self.send_mail_button.config(state="disabled")
+
+    def reset_temp_storage(self):
+        """Reset temporary PDF storage directory."""
+        try:
+            if self.temp_dir:
+                self.temp_dir.cleanup()
+        except Exception:
+            pass
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.pregenerated_pdfs = {}
 
     def cleanup(self):
         """アプリケーション終了時にリソースをクリーンアップする"""

@@ -8,7 +8,7 @@ from reportlab.lib.pagesizes import A4, portrait
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.ttfonts import TTFont, TTFError
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
 import config
@@ -16,34 +16,47 @@ import config
 # --- 定数 ---
 FONT_NAME = "MSPGothic"
 FONT_PATH = "C:\\Windows\\Fonts\\msgothic.ttc"
+FALLBACK_FONT_NAME = "Helvetica"
+
+_REGISTERED_FONT_NAME = FALLBACK_FONT_NAME
 
 # --- 日本語フォントの登録 ---
-def register_japanese_font():
-    """日本語フォントを登録する"""
-    if FONT_NAME not in pdfmetrics.getRegisteredFontNames():
+def register_japanese_font() -> str:
+    """日本語フォントを登録し、使用するフォント名を返す"""
+    global _REGISTERED_FONT_NAME
+    if FONT_NAME in pdfmetrics.getRegisteredFontNames():
+        _REGISTERED_FONT_NAME = FONT_NAME
+        return _REGISTERED_FONT_NAME
+    try:
+        if not os.path.exists(FONT_PATH):
+            raise FileNotFoundError(FONT_PATH)
         pdfmetrics.registerFont(TTFont(FONT_NAME, FONT_PATH, subfontIndex=1))
+        _REGISTERED_FONT_NAME = FONT_NAME
+    except (FileNotFoundError, TTFError) as err:
+        print(f"⚠️ フォント登録に失敗しました ({err})。既定フォントを使用します。")
+        _REGISTERED_FONT_NAME = FALLBACK_FONT_NAME
+    return _REGISTERED_FONT_NAME
 
 # --- スタイルの定義 ---
 def get_custom_styles() -> Dict[str, ParagraphStyle]:
     """PDF用のカスタムスタイルを返す"""
-    register_japanese_font()
+    font_name = register_japanese_font()
     styles = getSampleStyleSheet()
     
     leading = 15
     # タイトル: サイズ22
-    styles.add(ParagraphStyle(name='Title_J', parent=styles['h1'], fontName=FONT_NAME, fontSize=22, alignment=1, spaceAfter=10))
+    styles.add(ParagraphStyle(name='Title_J', parent=styles['h1'], fontName=font_name, fontSize=22, alignment=1, spaceAfter=10))
     # その他: サイズ11
-    styles.add(ParagraphStyle(name='Normal_J', parent=styles['Normal'], fontName=FONT_NAME, fontSize=11, leading=leading))
-    styles.add(ParagraphStyle(name='Right_J', parent=styles['Normal'], fontName=FONT_NAME, fontSize=11, alignment=2, leading=leading))
-    styles.add(ParagraphStyle(name='Center_J', parent=styles['Normal'], fontName=FONT_NAME, fontSize=11, alignment=1, leading=leading))
-    # 仕入先・担当者用: サイズ14
-    styles.add(ParagraphStyle(name='Supplier_J', parent=styles['Normal'], fontName=FONT_NAME, fontSize=14, leading=17))
-    # 担当者名（インデント付き）スタイル: 全角4文字分
+    styles.add(ParagraphStyle(name='Normal_J', parent=styles['Normal'], fontName=font_name, fontSize=11, leading=leading))
+    styles.add(ParagraphStyle(name='Right_J', parent=styles['Normal'], fontName=font_name, fontSize=11, alignment=2, leading=leading))
+    styles.add(ParagraphStyle(name='Center_J', parent=styles['Normal'], fontName=font_name, fontSize=11, alignment=1, leading=leading))
+    # 仕入先宛先先担当者: サイズ14
+    styles.add(ParagraphStyle(name='Supplier_J', parent=styles['Normal'], fontName=font_name, fontSize=14, leading=17))
+    # 担当者名（インデント付き）用スタイル: 全角一文字分のインデント
     styles.add(ParagraphStyle(name='Supplier_Indent_J', parent=styles['Supplier_J'], leftIndent=44))
 
     return styles
 
-# --- PDF生成関数 ---
 def create_order_pdf(
     supplier_name: str,
     items: List[Dict[str, Any]],
@@ -150,7 +163,7 @@ def create_order_pdf(
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
             ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('FONT', (0,0), (-1,0), FONT_NAME, 11), # ヘッダーフォント
+            ('FONT', (0,0), (-1,0), _REGISTERED_FONT_NAME, 11), # ヘッダーフォント
         ]))
         story.append(item_table)
         
