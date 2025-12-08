@@ -31,18 +31,6 @@ class TopPane(ttk.Frame):
         super().__init__(master)
         self.app = app
 
-        # --- 1a. データ取得ボタン ---
-        action_frame = ttk.Frame(self)
-        action_frame.pack(fill=tk.X, pady=(0, 10), anchor='w')
-
-        self.get_data_button = ttk.Button(action_frame, text="Notionからデータを取得", command=self.app.start_data_retrieval, style="Primary.TButton")
-        self.get_data_button.pack(side=tk.LEFT, ipady=5)
-
-        self.settings_button = ttk.Button(action_frame, text="🔧 設定", command=self.app.open_settings_window, style="Secondary.TButton")
-        self.settings_button.pack(side=tk.RIGHT, ipady=5, padx=10)
-
-        self.spinner_label = ttk.Label(action_frame, textvariable=self.app.spinner_var, font=("Yu Gothic UI", 16), foreground=self.app.ACCENT_COLOR)
-
         # --- フィルターとアカウントを並べて表示するコンテナ ---
         sub_pane = ttk.Frame(self)
         sub_pane.pack(fill=tk.X, expand=True)
@@ -67,15 +55,24 @@ class TopPane(ttk.Frame):
         # --- 右側のアカウント選択 ---
         account_frame = ttk.LabelFrame(sub_pane, text="送信者アカウント")
         account_frame.pack(side=tk.LEFT, anchor='n', padx=(20, 0))
-        
+
         account_display_names = sorted(list(self.app.display_name_to_key_map.keys()))
         self.account_selector = ttk.Combobox(account_frame, textvariable=self.app.selected_account_display_name, values=account_display_names, state="readonly", width=25, font=("Yu Gothic UI", 10))
         self.account_selector.pack(side=tk.LEFT, padx=10, pady=10)
-        
+
         sender_label_frame = ttk.Frame(account_frame)
         sender_label_frame.pack(side=tk.LEFT, fill=tk.X, padx=(0,10), pady=10)
         ttk.Label(sender_label_frame, text="送信元:").pack(side=tk.LEFT)
         ttk.Label(sender_label_frame, textvariable=self.app.sender_email_var, font=("Yu Gothic UI", 10, "bold")).pack(side=tk.LEFT, padx=5)
+
+        # --- 1a. データ取得ボタン ---
+        action_frame = ttk.Frame(self)
+        action_frame.pack(fill=tk.X, pady=(0, 10), anchor='w')
+
+        self.get_data_button = ttk.Button(action_frame, text="Notionからデータを取得", command=self.app.start_data_retrieval, style="Primary.TButton")
+        self.get_data_button.pack(side=tk.LEFT, ipady=5)
+
+        self.spinner_label = ttk.Label(action_frame, textvariable=self.app.spinner_var, font=("Yu Gothic UI", 16), foreground=self.app.ACCENT_COLOR)
 
     def toggle_buttons(self, enabled):
         state = "normal" if enabled else "disabled"
@@ -207,6 +204,8 @@ class Application(ttk.Frame):
     def __init__(self, master=None):
         super().__init__(master)
         self.master = master
+        self.configure_styles()
+        self.create_menu()
         self.q = queue.Queue()
         self.queue_io = QueueIO(self.q)
         
@@ -251,16 +250,16 @@ class Application(ttk.Frame):
         style = ttk.Style(self.master)
         style.theme_use("clam")
 
-        self.BG_COLOR = "#F8F9FA"
-        self.TEXT_COLOR = "#212529"
-        self.PRIMARY_COLOR = "#4A90E2"
-        self.ACCENT_COLOR = "#8A2BE2"
+        self.BG_COLOR = "#E8F0FF"
+        self.TEXT_COLOR = "#1F2A44"
+        self.PRIMARY_COLOR = "#1E40AF"
+        self.ACCENT_COLOR = "#2563EB"
         self.LIGHT_BG = "#FFFFFF"
         self.HEADER_FG = "#FFFFFF"
-        self.SELECT_BG = "#E8DAF5"
-        self.SELECT_FG = "#000000"
+        self.SELECT_BG = "#D1E2FF"
+        self.SELECT_FG = "#0F172A"
         self.EMPHASIS_COLOR = self.ACCENT_COLOR
-        self.BORDER_COLOR = "#DEE2E6"
+        self.BORDER_COLOR = "#C7D5EF"
 
         style.configure(".", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 10))
         style.configure("TFrame", background=self.BG_COLOR)
@@ -271,9 +270,9 @@ class Application(ttk.Frame):
         style.configure("TLabelFrame.Label", background=self.BG_COLOR, foreground=self.TEXT_COLOR, font=("Yu Gothic UI", 12, "bold"))
         style.configure("TButton", font=("Yu Gothic UI", 10, "bold"), borderwidth=0, padding=(15, 10))
         style.configure("Primary.TButton", background=self.PRIMARY_COLOR, foreground=self.HEADER_FG)
-        style.map("Primary.TButton", background=[("active", "#357ABD"), ("disabled", "#A9CCE3")])
-        style.configure("Secondary.TButton", background=self.BORDER_COLOR, foreground=self.TEXT_COLOR)
-        style.map("Secondary.TButton", background=[("active", "#C0C0C0"), ("disabled", "#E0E0E0")])
+        style.map("Primary.TButton", background=[("active", "#1B3AA8"), ("disabled", "#A9CCE3")])
+        style.configure("Secondary.TButton", background="#D9E8FF", foreground=self.TEXT_COLOR)
+        style.map("Secondary.TButton", background=[("active", "#BAC8EF"), ("disabled", "#E0E0E0")])
         style.configure("Treeview", background=self.LIGHT_BG, fieldbackground=self.LIGHT_BG, foreground=self.TEXT_COLOR, rowheight=28, font=("Yu Gothic UI", 10))
         style.map("Treeview", background=[("selected", self.SELECT_BG)], foreground=[("selected", self.SELECT_FG)])
         style.configure("Treeview.Heading", background="#6C757D", foreground=self.HEADER_FG, font=("Yu Gothic UI", 10, "bold"), padding=8)
@@ -282,10 +281,19 @@ class Application(ttk.Frame):
         style.configure("Vertical.TScrollbar", background=self.PRIMARY_COLOR, troughcolor=self.BG_COLOR, arrowcolor=self.HEADER_FG)
         style.configure("Horizontal.TScrollbar", background=self.PRIMARY_COLOR, troughcolor=self.BG_COLOR, arrowcolor=self.HEADER_FG)
         style.configure("TPanedWindow", background=self.BORDER_COLOR)
-        style.configure("Highlight.TFrame", background="#EAF2F8", bordercolor=self.PRIMARY_COLOR)
+        style.configure("Highlight.TFrame", background="#E0E9FF", bordercolor=self.PRIMARY_COLOR)
         style.configure("Light.TFrame", background=self.LIGHT_BG)
-        style.configure("Highlight.TCheckbutton", background="#EAF2F8", font=("Yu Gothic UI", 10))
-        style.map("Highlight.TCheckbutton", background=[('active', '#EAF2F8')], indicatorbackground=[('active', '#EAF2F8')], foreground=[('selected', '#357ABD')], font=[('selected', ("Yu Gothic UI", 10, "bold"))])
+        style.configure("Highlight.TCheckbutton", background="#E0E9FF", font=("Yu Gothic UI", 10))
+        style.map("Highlight.TCheckbutton", background=[('active', '#E0E9FF')], indicatorbackground=[('active', '#E0E9FF')], foreground=[('selected', '#1E40AF')], font=[('selected', ("Yu Gothic UI", 10, "bold"))])
+
+    def create_menu(self):
+        """アプリケーションメニューを生成する"""
+        menubar = tk.Menu(self.master)
+        settings_menu = tk.Menu(menubar, tearoff=0)
+        settings_menu.add_command(label="設定を開く", command=self.open_settings_window)
+        settings_menu.add_command(label="設定リロード", command=self.reload_ui_after_settings_change)
+        menubar.add_cascade(label="　⚙ 設定", menu=settings_menu)
+        self.master.config(menu=menubar)
 
     def create_widgets(self):
         self.pack(fill=tk.BOTH, expand=True)
