@@ -2,12 +2,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from tkinter.simpledialog import askstring
 import config
-
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from tkinter.simpledialog import askstring
-import config
 import keyring
+from typing import Any, List
 
 # アプリケーション識別のためのサービス名
 SERVICE_NAME = "NotionOrderApp"
@@ -154,6 +150,8 @@ class SettingsWindow(tk.Toplevel):
         self.accounts_data = {}
         self.department_defaults_vars = {}
         self.department_guidance_vars = {}
+        self.save_result = {"saved": False, "message": "設定変更をキャンセルしました。"}
+        self.original_settings = config._load_settings_from_json()
 
         main_frame = ttk.Frame(self, padding=(10, 10, 10, 0))
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -175,7 +173,9 @@ class SettingsWindow(tk.Toplevel):
         button_frame = ttk.Frame(main_frame)
         button_frame.grid(row=1, column=0, sticky="se", pady=(10, 0))
         ttk.Button(button_frame, text="保存して閉じる", command=self.save_and_close).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(button_frame, text="キャンセル", command=self.destroy).pack(side=tk.RIGHT)
+        ttk.Button(button_frame, text="キャンセル", command=self.close_without_save).pack(side=tk.RIGHT)
+
+        self.protocol("WM_DELETE_WINDOW", self.close_without_save)
 
         self.load_settings()
 
@@ -428,12 +428,46 @@ class SettingsWindow(tk.Toplevel):
         current_json_data["department_guidance_numbers"] = new_guidance
 
         success, message = config.save_settings(current_json_data)
-
         if success:
-            messagebox.showinfo("成功", message, parent=self)
+            summary = self._build_change_summary(self.original_settings, current_json_data)
+            if summary:
+                full_message = f"{message} 変更内容: {summary}"
+            else:
+                full_message = message
+            self.save_result = {"saved": True, "message": full_message}
+            messagebox.showinfo("成功", full_message, parent=self)
             self.destroy()
         else:
             messagebox.showerror("エラー", message, parent=self)
+
+    def close_without_save(self):
+        self.save_result = {"saved": False, "message": "設定変更をキャンセルしました。"}
+        self.destroy()
+
+    def _build_change_summary(self, before: dict, after: dict) -> str:
+        parts: List[str] = []
+        self._append_diff(parts, "メールアカウント", before.get("accounts", {}), after.get("accounts", {}))
+        self._append_diff(parts, "部署", before.get("departments", []), after.get("departments", []))
+        self._append_diff(parts, "デフォルト送信者", before.get("department_defaults", {}), after.get("department_defaults", {}))
+        self._append_diff(parts, "ガイダンス番号", before.get("department_guidance_numbers", {}), after.get("department_guidance_numbers", {}))
+        return "、".join(parts) if parts else ""
+
+    def _append_diff(self, target: List[str], label: str, before: Any, after: Any):
+        diff = self._extract_diff(before, after)
+        if diff:
+            target.append(f"{label}: {len(diff)}項目変更")
+
+    def _extract_diff(self, before: Any, after: Any) -> List[Any]:
+        if isinstance(before, dict) and isinstance(after, dict):
+            keys = set(before.keys()) | set(after.keys())
+            return [key for key in keys if before.get(key) != after.get(key)]
+        if isinstance(before, (list, tuple)) and isinstance(after, (list, tuple)):
+            if set(before) == set(after):
+                return []
+            return list(set(after).symmetric_difference(set(before)))
+        if before != after:
+            return [after]
+        return []
 
 if __name__ == '__main__':
     root = tk.Tk()

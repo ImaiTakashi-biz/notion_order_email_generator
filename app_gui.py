@@ -34,10 +34,12 @@ class TopPane(ttk.Frame):
         # --- フィルターとアカウントを並べて表示するコンテナ ---
         sub_pane = ttk.Frame(self)
         sub_pane.pack(fill=tk.X, expand=True)
+        sub_pane.columnconfigure(0, weight=3)
+        sub_pane.columnconfigure(1, weight=0)
 
         # --- 1b. 部署名フィルター ---
         department_container = ttk.Frame(sub_pane, style="Highlight.TFrame", relief="solid", borderwidth=1, padding=(0, 5))
-        department_container.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=(5,0))
+        department_container.grid(row=0, column=0, sticky="ew", pady=(5, 0))
 
         title_label = ttk.Label(department_container, text="部署名フィルター", font=("Yu Gothic UI", 12, "bold"), foreground=self.app.PRIMARY_COLOR, background="#EAF2F8")
         title_label.pack(anchor="w", padx=10, pady=(0, 2))
@@ -53,16 +55,21 @@ class TopPane(ttk.Frame):
             cb.grid(row=0, column=i, padx=(5, 15), pady=(0,5), sticky='w')
 
         # --- 右側のアカウント選択 ---
-        account_frame = ttk.LabelFrame(sub_pane, text="送信者アカウント")
-        account_frame.pack(side=tk.LEFT, anchor='n', padx=(20, 0))
+        account_frame = ttk.Frame(sub_pane, style="Highlight.TFrame", relief="solid", borderwidth=1, padding=(0, 5))
+        account_frame.grid(row=0, column=1, sticky="n", padx=(20, 0), pady=(5, 0))
+        ttk.Label(account_frame, text="送信者アカウント", font=("Yu Gothic UI", 12, "bold"),
+                  foreground=self.app.PRIMARY_COLOR, background="#E0E9FF").pack(anchor="w", padx=10, pady=(0, 2))
+
+        account_contents = ttk.Frame(account_frame, style="Highlight.TFrame")
+        account_contents.pack(fill=tk.X, padx=10, pady=(2, 10))
 
         account_display_names = sorted(list(self.app.display_name_to_key_map.keys()))
-        self.account_selector = ttk.Combobox(account_frame, textvariable=self.app.selected_account_display_name, values=account_display_names, state="readonly", width=25, font=("Yu Gothic UI", 10))
-        self.account_selector.pack(side=tk.LEFT, padx=10, pady=10)
+        self.account_selector = ttk.Combobox(account_contents, textvariable=self.app.selected_account_display_name, values=account_display_names, state="readonly", width=25, font=("Yu Gothic UI", 10))
+        self.account_selector.pack(side=tk.LEFT, padx=(0, 10), pady=4)
 
-        sender_label_frame = ttk.Frame(account_frame)
-        sender_label_frame.pack(side=tk.LEFT, fill=tk.X, padx=(0,10), pady=10)
-        ttk.Label(sender_label_frame, text="送信元:").pack(side=tk.LEFT)
+        sender_label_frame = ttk.Frame(account_contents, style="Highlight.TFrame")
+        sender_label_frame.pack(side=tk.LEFT, fill=tk.X, padx=(0, 10), pady=4)
+        ttk.Label(sender_label_frame, text="送信元:", font=("Yu Gothic UI", 10)).pack(side=tk.LEFT)
         ttk.Label(sender_label_frame, textvariable=self.app.sender_email_var, font=("Yu Gothic UI", 10, "bold")).pack(side=tk.LEFT, padx=5)
 
         # --- 1a. データ取得ボタン ---
@@ -452,9 +459,13 @@ class Application(ttk.Frame):
     def open_settings_window(self):
         settings_win = settings_gui.SettingsWindow(self.master)
         self.master.wait_window(settings_win)
-        import importlib
-        importlib.reload(config)
-        self.reload_ui_after_settings_change()
+        result = getattr(settings_win, "save_result", None)
+        if result and result.get("saved"):
+            import importlib
+            importlib.reload(config)
+            self.reload_ui_after_settings_change(message=result.get("message"))
+        else:
+            self.log(result.get("message", "設定変更をキャンセルしました。"))
 
     def open_current_pdf(self, event=None):
         if self.current_pdf_path and os.path.exists(self.current_pdf_path):
@@ -747,8 +758,11 @@ class Application(ttk.Frame):
     def toggle_buttons(self, enabled):
         self.top_pane.toggle_buttons(enabled)
 
-    def reload_ui_after_settings_change(self):
-        self.log("設定をリロードしました。")
+    def reload_ui_after_settings_change(self, message=None):
+        if message:
+            self.log(message)
+        else:
+            self.log("設定をリロードしました。")
         self.accounts = config.load_email_accounts()
         self.department_defaults = config.load_department_defaults()
         self.display_name_to_key_map = {v.get('display_name', k): k for k, v in self.accounts.items()}
