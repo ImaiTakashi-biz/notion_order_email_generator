@@ -102,7 +102,7 @@ def get_order_data_from_notion(department_names: Optional[List[str]] = None) -> 
             )
 
             base_filter: Dict[str, Any] = {
-                "property": "発注判定",
+                "property": "注文ステータス",
                 "formula": {"string": {"contains": "要発注"}},
             }
 
@@ -150,7 +150,7 @@ def get_order_data_from_notion(department_names: Optional[List[str]] = None) -> 
             ]
 
             maker = _get_safe_text(props.get("メーカー名", {}).get("rich_text")).strip()
-            part_number = _get_safe_text(props.get("DB品番", {}).get("rich_text")).strip()
+            part_number = _get_safe_text(props.get("品番", {}).get("rich_text")).strip()
             quantity = int(_get_safe_number(props.get("数量")) or 0)
             remarks = _get_safe_text(props.get("備考", {}).get("rich_text")).strip()
             supplier_name = _get_safe_text(supplier_props.get("購入先", {}).get("title")).strip()

@@ -2,3 +2,4 @@
 __pycache__/
 .env
 email_accounts.json
+.cursor/
