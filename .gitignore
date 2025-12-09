@@ -1,5 +1,36 @@
+# Python
 .venv/
+venv/
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 環境変数・設定ファイル
 .env
 email_accounts.json
+
+# IDE
+.idea/
+.vscode/
 .cursor/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ログ・一時ファイル
+*.log
+*.tmp
+*.bak
