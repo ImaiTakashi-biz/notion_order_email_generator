@@ -1,6 +1,5 @@
 ﻿import smtplib
 import os
-from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -12,21 +11,6 @@ import keyring
 from keyring.errors import KeyringError
 
 SERVICE_NAME = "NotionOrderApp"
-LOG_DIR = os.path.join(os.getcwd(), "logs")
-EMAIL_LOG_PATH = os.path.join(LOG_DIR, "email_send.log")
-
-
-def _append_email_log(status: str, supplier: str, detail: str = "") -> None:
-    try:
-        os.makedirs(LOG_DIR, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        safe_detail = detail.replace("\n", " ").strip()
-        safe_supplier = supplier.replace("\n", " ").strip()
-        with open(EMAIL_LOG_PATH, "a", encoding="utf-8") as fp:
-            fp.write(f"{timestamp}\t{status}\t{safe_supplier}\t{safe_detail}\n")
-    except Exception:
-        # ログ記録が失敗してもユーザー処理は継続する
-        pass
 
 
 def _sanitize_header(value: str) -> str:
@@ -184,9 +168,7 @@ def prepare_and_send_order_email(
     )
 
     if success:
-        _append_email_log("success", supplier_name, "メール送信に成功")
         return True, None
 
     detail = error_message or "送信に失敗しました"
-    _append_email_log("failed", supplier_name, detail)
     return False, detail
