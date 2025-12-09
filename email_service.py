@@ -9,8 +9,12 @@ from typing import Dict, Any, Optional, List, Tuple
 import config
 import keyring
 from keyring.errors import KeyringError
+import logger_config
 
 SERVICE_NAME = "NotionOrderApp"
+
+# ロガーの取得
+logger = logger_config.get_logger(__name__)
 
 
 def _sanitize_header(value: str) -> str:
@@ -44,7 +48,7 @@ def send_smtp_mail(
 
         if not sender_email or not password:
             message = "送信元メールアドレスまたはパスワードが不明です。"
-            print(f"✗ メール送信エラー: {message}")
+            logger.error(message)
             return False, message
 
         msg = MIMEMultipart()
@@ -61,7 +65,7 @@ def send_smtp_mail(
 
         if not to_addresses:
             message = "宛先メールアドレスが設定されていません。"
-            print(f"✗ メール送信エラー: {message}")
+            logger.error(message)
             return False, message
 
         msg["To"] = ", ".join(to_addresses)
@@ -108,20 +112,21 @@ def send_smtp_mail(
             server.login(sender_email, password)
             recipients = to_addresses + cc_addresses
             server.sendmail(sender_email, recipients, msg.as_string())
-
+        
+        logger.info(f"メール送信成功: {info.get('supplier_name', 'Unknown')} 宛")
         return True, None
-    except smtplib.SMTPAuthenticationError:
+    except smtplib.SMTPAuthenticationError as e:
         message = "SMTP認証に失敗しました。ログイン情報を確認してください。"
-        print(f"✗ メール送信エラー: {message}")
+        logger.error(f"{message} - {e}", exc_info=True)
         return False, message
-    except (smtplib.SMTPConnectError, ConnectionRefusedError, OSError) as exc:
-        message = f"SMTPサーバー({config.SMTP_SERVER}:{config.SMTP_PORT})に接続できません。詳細: {exc}"
-        print(f"✗ メール送信エラー: {message}")
-        return False, message
-    except Exception as exc:
-        message = f"予期せぬエラーが発生しました: {exc}"
-        print(f"✗ メール送信エラー: {message}")
-        return False, message
+    except (smtplib.SMTPConnectError, ConnectionRefusedError, OSError) as e:
+        message = f"SMTPサーバー({config.SMTP_SERVER}:{config.SMTP_PORT})に接続できません。"
+        logger.error(f"{message} - {e}", exc_info=True)
+        return False, f"{message} 詳細: {e}"
+    except Exception as e:
+        message = "予期せぬエラーが発生しました"
+        logger.error(f"{message}: {e}", exc_info=True)
+        return False, f"{message}: {e}"
 
 
 def prepare_and_send_order_email(
@@ -139,11 +144,11 @@ def prepare_and_send_order_email(
         password = keyring.get_password(SERVICE_NAME, sender_email or "")
     except KeyringError as err:
         message = f"OSの資格情報ストアにアクセスできませんでした ({err})."
-        print(f"✗ パスワード取得エラー: {message}")
+        logger.error(message, exc_info=True)
         return False, message
     if not password:
         message = f"{sender_email} のパスワードがOSに保存されていません。"
-        print(f"✗ パスワード取得エラー: {message}")
+        logger.error(message)
         return False, message
 
     creds_with_pass = sender_creds.copy()
@@ -151,11 +156,11 @@ def prepare_and_send_order_email(
 
     if not items:
         message = "対象アイテムがありません。"
-        print(f"✗ メール送信エラー: {message}")
+        logger.error(message)
         return False, message
     if not pdf_path or not os.path.exists(pdf_path):
-        message = "添付するPDFファイルが見つかりません。"
-        print(f"✗ メール送信エラー: {message}")
+        message = f"添付するPDFファイルが見つかりません: {pdf_path}"
+        logger.error(message)
         return False, message
 
     supplier_name = items[0].get("supplier_name", "")

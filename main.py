@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 import config
-from app_gui import Application
+from controllers.app_controller import Application
 
 def main():
     """

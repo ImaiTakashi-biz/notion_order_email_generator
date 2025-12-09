@@ -9,6 +9,11 @@ import notion_client
 from notion_client import Client
 
 import config
+import logger_config
+import cache_manager
+
+# ロガーの取得
+logger = logger_config.get_logger(__name__)
 
 _NOTION_LOCK = threading.Lock()
 _NOTION_CLIENT: Optional[Client] = None
@@ -66,8 +71,10 @@ def _get_all_pages_from_db(
                 with _NOTION_LOCK:
                     query_res = client.databases.query(**query_args)
                 break
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Notion APIクエリエラー (試行 {attempt + 1}/3): {e}")
                 if attempt == 2:
+                    logger.error(f"Notion APIクエリが3回失敗しました。database_id: {database_id}")
                     return all_results
                 time.sleep(config.AppConstants.NOTION_API_DELAY * (attempt + 1))
 
@@ -173,7 +180,8 @@ def get_order_data_from_notion(department_names: Optional[List[str]] = None) -> 
                 }
             )
 
-    except Exception:
+    except Exception as e:
+        logger.error(f"Notionから注文データ取得中にエラーが発生しました: {e}", exc_info=True)
         return {"orders": [], "unlinked_count": 0}
 
     return {"orders": order_list, "unlinked_count": unlinked_count}
@@ -181,24 +189,80 @@ def get_order_data_from_notion(department_names: Optional[List[str]] = None) -> 
 
 def update_notion_pages(page_ids: List[str]) -> None:
     """
-    対象ページの「発注日」を当日日付で更新する。
+    対象ページの「発注日」を当日日付で更新する（並列処理で高速化）。
+    
+    Args:
+        page_ids: 更新するページIDのリスト
     """
+    if not page_ids:
+        logger.warning("更新するページIDが空です")
+        return
+    
     client = _get_notion_client()
     today = datetime.now().strftime("%Y-%m-%d")
-
-    for page_id in page_ids:
+    
+    def update_page(page_id: str) -> tuple[str, bool, Optional[str]]:
+        """
+        単一ページを更新する内部関数
+        
+        Returns:
+            (page_id, 成功フラグ, エラーメッセージ)
+        """
         try:
             with _NOTION_LOCK:
-                client.pages.update(page_id=page_id, properties={"発注日": {"date": {"start": today}}})
+                client.pages.update(
+                    page_id=page_id,
+                    properties={"発注日": {"date": {"start": today}}}
+                )
             time.sleep(config.AppConstants.NOTION_API_DELAY)
-        except Exception:
-            continue
+            logger.debug(f"Notionページ更新成功: {page_id}")
+            return (page_id, True, None)
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Notionページ更新エラー (page_id: {page_id}): {error_msg}")
+            return (page_id, False, error_msg)
+    
+    # 並列処理で更新（最大3並列、Notion API制限を考慮）
+    max_workers = min(3, len(page_ids))
+    logger.info(f"Notionページ更新開始: {len(page_ids)}件を{max_workers}並列で処理")
+    
+    success_count = 0
+    failure_count = 0
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = list(executor.map(update_page, page_ids))
+    
+    for page_id, success, error_msg in results:
+        if success:
+            success_count += 1
+        else:
+            failure_count += 1
+    
+    logger.info(f"Notionページ更新完了: 成功 {success_count}件, 失敗 {failure_count}件")
+    
+    if failure_count > 0:
+        logger.warning(f"{failure_count}件のページ更新に失敗しました。詳細はログを確認してください。")
 
 
 def fetch_and_process_orders(department_names: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Notionから取得したデータを仕入先単位でグルーピングして返す。
+    キャッシュ機能付き。
+    
+    Args:
+        department_names: 部署名のリスト（フィルタリング用）
+    
+    Returns:
+        仕入先ごとにグループ化された注文データ
     """
+    # キャッシュから取得を試みる
+    cached_result = cache_manager.get_cached_data(department_names)
+    if cached_result is not None:
+        logger.info("キャッシュからデータを取得しました")
+        return cached_result
+    
+    # キャッシュにない場合はNotionから取得
+    logger.info("Notionからデータを取得します")
     raw_data = get_order_data_from_notion(department_names)
     orders = raw_data.get("orders", [])
     unlinked_count = raw_data.get("unlinked_count", 0)
@@ -209,4 +273,13 @@ def fetch_and_process_orders(department_names: Optional[List[str]] = None) -> Di
         if supplier_name:
             grouped_orders[supplier_name].append(order)
 
-    return {"orders_by_supplier": dict(grouped_orders), "all_orders": orders, "unlinked_count": unlinked_count}
+    result = {
+        "orders_by_supplier": dict(grouped_orders),
+        "all_orders": orders,
+        "unlinked_count": unlinked_count
+    }
+    
+    # 結果をキャッシュに保存
+    cache_manager.set_cached_data(department_names, result)
+    
+    return result

@@ -12,30 +12,53 @@ from reportlab.pdfbase.ttfonts import TTFont, TTFError
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
 import config
+import logger_config
+
+# ロガーの取得
+logger = logger_config.get_logger(__name__)
 
 # --- 定数 ---
 FONT_NAME = "MSPGothic"
 FONT_PATH = "C:\\Windows\\Fonts\\msgothic.ttc"
 FALLBACK_FONT_NAME = "Helvetica"
 
+# フォント登録をモジュール読み込み時に1回だけ実行（最適化）
 _REGISTERED_FONT_NAME = FALLBACK_FONT_NAME
+_FONT_INITIALIZED = False
 
 # --- 日本語フォントの登録 ---
 def register_japanese_font() -> str:
-    """日本語フォントを登録し、使用するフォント名を返す"""
-    global _REGISTERED_FONT_NAME
+    """
+    日本語フォントを登録し、使用するフォント名を返す
+    モジュール読み込み時に1回だけ実行される（最適化）
+    """
+    global _REGISTERED_FONT_NAME, _FONT_INITIALIZED
+    
+    if _FONT_INITIALIZED:
+        return _REGISTERED_FONT_NAME
+    
     if FONT_NAME in pdfmetrics.getRegisteredFontNames():
         _REGISTERED_FONT_NAME = FONT_NAME
+        _FONT_INITIALIZED = True
+        logger.debug(f"フォント '{FONT_NAME}' は既に登録されています")
         return _REGISTERED_FONT_NAME
+    
     try:
         if not os.path.exists(FONT_PATH):
             raise FileNotFoundError(FONT_PATH)
         pdfmetrics.registerFont(TTFont(FONT_NAME, FONT_PATH, subfontIndex=1))
         _REGISTERED_FONT_NAME = FONT_NAME
+        _FONT_INITIALIZED = True
+        logger.info(f"日本語フォント '{FONT_NAME}' を登録しました")
     except (FileNotFoundError, TTFError) as err:
-        print(f"⚠️ フォント登録に失敗しました ({err})。既定フォントを使用します。")
+        logger.warning(f"フォント登録に失敗しました ({err})。既定フォントを使用します。")
         _REGISTERED_FONT_NAME = FALLBACK_FONT_NAME
+        _FONT_INITIALIZED = True
+    
     return _REGISTERED_FONT_NAME
+
+# モジュール読み込み時にフォントを初期化
+register_japanese_font()
 
 # --- スタイルの定義 ---
 def get_custom_styles() -> Dict[str, ParagraphStyle]:
@@ -172,7 +195,7 @@ def create_order_pdf(
         return pdf_path
 
     except Exception as e:
-        print(f"❌ PDF作成中に予期せぬエラーが発生しました (reportlab): {e}")
+        logger.error(f"PDF作成中に予期せぬエラーが発生しました: {e}", exc_info=True)
         return None
 
 def generate_order_pdf_flow(
@@ -199,5 +222,5 @@ def generate_order_pdf_flow(
 
     except Exception as e:
         error_message = f"予期せぬエラーが発生しました: {e}"
-        print(f"❌ PDF生成フロー中に{error_message}")
+        logger.error(f"PDF生成フロー中に{error_message}", exc_info=True)
         return None, None, error_message

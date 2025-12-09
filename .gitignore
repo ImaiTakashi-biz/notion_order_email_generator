@@ -13,6 +13,11 @@ build/
 .coverage
 htmlcov/
 
+# PyInstaller
+# 注意: .specファイルは通常Git管理に含めるべきですが、
+# 個人のカスタマイズ設定を無視したい場合は以下のコメントを外してください
+# *.spec
+
 # 環境変数・設定ファイル
 .env
 email_accounts.json
@@ -31,6 +36,7 @@ Thumbs.db
 desktop.ini
 
 # ログ・一時ファイル
+logs/
 *.log
 *.tmp
 *.bak
