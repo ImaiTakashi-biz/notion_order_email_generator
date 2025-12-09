@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
+import os
 import config
 from controllers.app_controller import Application
 
@@ -26,6 +27,16 @@ def main():
     # 検証が成功した場合のみGUIを起動
     root = tk.Tk()
     root.title("Notion 注文書メール自動作成アプリ")
+    
+    # アイコンの設定（存在する場合）
+    icon_path = "app_icon.ico"
+    if os.path.exists(icon_path):
+        try:
+            root.iconbitmap(icon_path)
+        except Exception:
+            # アイコンの読み込みに失敗してもアプリは継続
+            pass
+    
     root.state('zoomed')
     app = Application(master=root)
     app.mainloop()

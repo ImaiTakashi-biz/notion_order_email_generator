@@ -95,11 +95,57 @@ PDF_SAVE_DIR="C:\path\to\save\pdfs"
 
 ## 実行方法
 
+### 開発環境での実行
+
 以下のコマンドでアプリケーションを起動します。
 
 ```bash
 python main.py
 ```
+
+### 配布用実行ファイルの作成（PyInstaller）
+
+PyInstallerを使用して、単一の実行ファイル（.exe）としてビルドできます。
+
+#### 1. PyInstallerのインストール
+
+```bash
+pip install pyinstaller
+```
+
+#### 2. 実行ファイルのビルド
+
+以下のコマンドで、onefileモードで実行ファイルを生成します。`.env`と`email_accounts.json`も実行ファイルに含めます。
+
+```bash
+pyinstaller --onefile --noconsole --name=NotionOrderApp --icon=app_icon.ico --add-data ".env;." --add-data "email_accounts.json;." main.py
+```
+
+**オプション説明:**
+- `--onefile`: 単一の実行ファイルとしてビルド
+- `--noconsole`: コンソールウィンドウを表示しない（GUIアプリ向け）
+- `--name=NotionOrderApp`: 生成される実行ファイルの名前を指定
+- `--icon=app_icon.ico`: アプリケーションのアイコンを指定
+- `--add-data ".env;."`: `.env`ファイルを実行ファイルに含める（Windows形式: `ファイルパス;展開先`）
+- `--add-data "email_accounts.json;."`: `email_accounts.json`ファイルを実行ファイルに含める
+
+**注意:** ビルド前に、プロジェクトルートに`.env`、`email_accounts.json`、`app_icon.ico`が存在することを確認してください。
+
+ビルドが完了すると、`dist/NotionOrderApp.exe`が生成されます。
+
+#### 3. 配布時のファイル構成
+
+配布時は、実行ファイルのみを配布します。設定ファイル（`.env`と`email_accounts.json`）は実行ファイルに含まれています。
+
+```
+配布フォルダ/
+└── NotionOrderApp.exe        # 実行ファイル（設定ファイルを含む）
+```
+
+**重要:**
+- 配布物は`.exe`ファイル1つだけです
+- `.env`と`email_accounts.json`は実行ファイルに含まれているため、別途配布する必要はありません
+- 実行ファイルを実行すると、一時ディレクトリに設定ファイルが展開され、アプリケーションが読み込みます
 
 ## GUIの操作方法
 
@@ -110,6 +156,38 @@ python main.py
 5.  **プレビューと送信:** PDFの作成が完了すると、画面下部に宛先や担当者、添付ファイル名が表示されます。内容を確認し、問題がなければ「メール送信」ボタンを押してください。
 6.  **Notionの更新:** メール送信後、Notionの対象ページの「発注日」を更新するか確認ダイアログが表示されます。「はい」を選択すると、発注日が今日の日付で記録されます。
 
+## ファイル構成
+
+```
+/
+├── .gitignore
+├── main.py                    # アプリケーションのエントリーポイント
+├── app_gui.py                 # 後方互換性のための統合ファイル
+├── config.py                  # 設定情報(.env, .json)の読み込み、定数管理
+├── email_service.py           # メール作成・送信処理
+├── notion_api.py              # Notion APIとの連携処理
+├── pdf_generator.py           # Excelテンプレートからの注文書PDF生成処理
+├── settings_gui.py            # 設定画面のGUIとロジック
+├── logger_config.py           # ロギング設定モジュール
+├── cache_manager.py           # Notionデータ取得のキャッシュ管理
+├── requirements.txt           # 依存ライブラリリスト
+├── README.md                  # このファイル
+├── controllers/               # コントローラーモジュール
+│   ├── __init__.py
+│   └── app_controller.py     # アプリケーションのメインコントローラー
+├── ui/                        # UIコンポーネントモジュール
+│   ├── __init__.py
+│   ├── queue_io.py           # 標準出力のキューリダイレクト
+│   ├── top_pane.py           # 上部UI（部署フィルター、アカウント選択）
+│   ├── middle_pane.py        # 中央UI（仕入先リスト、注文データテーブル）
+│   └── bottom_pane.py       # 下部UI（プレビュー、ログ表示）
+└── tests/                     # 自動テストコード
+    ├── test_email_service.py
+    ├── test_notion_api.py
+    └── test_pdf_generator.py
+```
+
 ## 注意事項
 - 本アプリケーションは`win32com`ライブラリを使用しているため、**Windows環境でのみ動作**します。
 - `email_accounts.json` にメールアカウントのパスワードを直接記述します。ファイルの取り扱いには十分ご注意ください。
+- **配布時**: PyInstallerでビルドした実行ファイルには、`.env`と`email_accounts.json`が含まれています。ビルド前にこれらのファイルを正しく設定しておく必要があります。設定が不適切な場合、アプリケーションは起動時にエラーダイアログを表示して終了します。
