@@ -45,8 +45,7 @@ class AccountDialog(tk.Toplevel):
         ttk.Label(frame, text="一意のキー:").grid(row=0, column=0, sticky=tk.W, pady=5)
         key_entry = ttk.Entry(frame, textvariable=self.key_var, width=40)
         key_entry.grid(row=0, column=1, sticky="ew", pady=5)
-        if not is_new:
-            key_entry.config(state="readonly")
+        # 編集時でもキーを変更可能にする
 
         ttk.Label(frame, text="表示名:").grid(row=1, column=0, sticky=tk.W, pady=5)
         ttk.Entry(frame, textvariable=self.display_name_var).grid(row=1, column=1, sticky="ew", pady=5)
@@ -152,6 +151,8 @@ class SettingsWindow(tk.Toplevel):
         self.department_guidance_vars = {}
         self.save_result = {"saved": False, "message": "設定変更をキャンセルしました。"}
         self.original_settings = config._load_settings_from_json()
+        # キー変更を追跡するためのマッピング（古いキー -> 新しいキー）
+        self.key_mapping = {}
 
         main_frame = ttk.Frame(self, padding=(10, 10, 10, 0))
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -259,7 +260,29 @@ class SettingsWindow(tk.Toplevel):
         self.wait_window(dialog)
 
         if dialog.result:
-            self.accounts_data[selected_key] = dialog.result["details"]
+            new_key = dialog.result["key"]
+            new_details = dialog.result["details"]
+            
+            # キーが変更された場合の処理
+            if new_key != selected_key:
+                # 新しいキーが既に使用されているかチェック
+                if new_key in self.accounts_data:
+                    messagebox.showerror("エラー", f"キー '{new_key}' は既に使用されています。", parent=self)
+                    return
+                
+                # キーマッピングを記録（後でrefresh_defaults_uiで使用）
+                self.key_mapping[selected_key] = new_key
+                
+                # 古いキーのデータを削除
+                if selected_key in self.accounts_data:
+                    del self.accounts_data[selected_key]
+                
+                # 新しいキーでデータを保存
+                self.accounts_data[new_key] = new_details
+            else:
+                # キーが変更されていない場合は通常通り更新
+                self.accounts_data[selected_key] = new_details
+            
             self.refresh_accounts_tree()
             self.refresh_defaults_ui()
             self.refresh_guidance_ui()
@@ -372,6 +395,10 @@ class SettingsWindow(tk.Toplevel):
             self.department_defaults_vars[dept] = combo
             
             default_key = current_defaults.get(dept)
+            # キーマッピングを適用（古いキーが新しいキーに変更されている場合）
+            if default_key in self.key_mapping:
+                default_key = self.key_mapping[default_key]
+            
             if default_key and default_key in self.accounts_data:
                 display_name = self.accounts_data[default_key].get("display_name")
                 combo.set(display_name)
@@ -413,10 +440,19 @@ class SettingsWindow(tk.Toplevel):
         # デフォルト送信者設定を保存
         new_defaults = {}
         key_map = {v.get("display_name"): k for k, v in self.accounts_data.items()}
+        # 元の設定を読み込み、キーマッピングを適用
+        original_defaults = config._load_settings_from_json().get("department_defaults", {})
         for dept, combo in self.department_defaults_vars.items():
             display_name = combo.get()
             if display_name in key_map:
                 new_defaults[dept] = key_map[display_name]
+            else:
+                # 表示名が設定されていない場合、元の設定を確認（キーマッピング適用済み）
+                original_key = original_defaults.get(dept)
+                if original_key in self.key_mapping:
+                    original_key = self.key_mapping[original_key]
+                if original_key and original_key in self.accounts_data:
+                    new_defaults[dept] = original_key
         current_json_data["department_defaults"] = new_defaults
 
         # ガイダンス番号設定を保存
