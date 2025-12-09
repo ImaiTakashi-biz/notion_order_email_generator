@@ -41,7 +41,7 @@ class TopPane(ttk.Frame):
         department_container = ttk.Frame(sub_pane, style="Highlight.TFrame", relief="solid", borderwidth=1, padding=(0, 5))
         department_container.grid(row=0, column=0, sticky="ew", pady=(5, 0))
 
-        title_label = ttk.Label(department_container, text="部署名フィルター", font=("Yu Gothic UI", 12, "bold"), foreground=self.app.PRIMARY_COLOR, background="#EAF2F8")
+        title_label = ttk.Label(department_container, text="部署名フィルター", font=("Yu Gothic UI", 12, "bold"), foreground=self.app.PRIMARY_COLOR, background="#E0E9FF")
         title_label.pack(anchor="w", padx=10, pady=(0, 2))
 
         departments = config.load_departments()
@@ -66,11 +66,23 @@ class TopPane(ttk.Frame):
         account_display_names = sorted(list(self.app.display_name_to_key_map.keys()))
         self.account_selector = ttk.Combobox(account_contents, textvariable=self.app.selected_account_display_name, values=account_display_names, state="readonly", width=25, font=("Yu Gothic UI", 10))
         self.account_selector.pack(side=tk.LEFT, padx=(0, 10), pady=4)
+        def on_combobox_selected(event):
+            # フォーカスを外して選択状態を解除
+            account_contents.focus_set()
+            # エントリ部分の選択範囲を解除
+            try:
+                # ttk.Comboboxのエントリ部分にアクセス
+                entry_widget = self.account_selector.children.get('!entry')
+                if entry_widget:
+                    entry_widget.selection_clear()
+            except (AttributeError, KeyError):
+                pass
+        self.account_selector.bind("<<ComboboxSelected>>", on_combobox_selected)
 
         sender_label_frame = ttk.Frame(account_contents, style="Highlight.TFrame")
         sender_label_frame.pack(side=tk.LEFT, fill=tk.X, padx=(0, 10), pady=4)
-        ttk.Label(sender_label_frame, text="送信元:", font=("Yu Gothic UI", 10)).pack(side=tk.LEFT)
-        ttk.Label(sender_label_frame, textvariable=self.app.sender_email_var, font=("Yu Gothic UI", 10, "bold")).pack(side=tk.LEFT, padx=5)
+        ttk.Label(sender_label_frame, text="送信元:", font=("Yu Gothic UI", 10), background="#E0E9FF").pack(side=tk.LEFT)
+        ttk.Label(sender_label_frame, textvariable=self.app.sender_email_var, font=("Yu Gothic UI", 10, "bold"), background="#E0E9FF").pack(side=tk.LEFT, padx=5)
 
         # --- 1a. データ取得ボタン ---
         action_frame = ttk.Frame(self)
@@ -284,7 +296,20 @@ class Application(ttk.Frame):
         style.map("Treeview", background=[("selected", self.SELECT_BG)], foreground=[("selected", self.SELECT_FG)])
         style.configure("Treeview.Heading", background="#6C757D", foreground=self.HEADER_FG, font=("Yu Gothic UI", 10, "bold"), padding=8)
         style.map("Treeview.Heading", background=[("active", "#495057")])
-        style.configure("TCombobox", font=("Yu Gothic UI", 10), fieldbackground=self.LIGHT_BG, padding=5)
+        style.configure("TCombobox", font=("Yu Gothic UI", 10), fieldbackground=self.LIGHT_BG, background=self.LIGHT_BG, foreground=self.TEXT_COLOR, padding=5, selectbackground=self.LIGHT_BG, selectforeground=self.TEXT_COLOR)
+        style.map("TCombobox", 
+                  fieldbackground=[("readonly", self.LIGHT_BG)], 
+                  background=[("readonly", self.LIGHT_BG)], 
+                  foreground=[("readonly", self.TEXT_COLOR)],
+                  selectbackground=[("readonly", self.LIGHT_BG)],
+                  selectforeground=[("readonly", self.TEXT_COLOR)])
+        # Comboboxのエントリ部分のスタイルを設定
+        style.configure("TCombobox.field", selectbackground=self.LIGHT_BG, selectforeground=self.TEXT_COLOR, background=self.LIGHT_BG, foreground=self.TEXT_COLOR)
+        style.map("TCombobox.field", 
+                  selectbackground=[("readonly", self.LIGHT_BG)],
+                  selectforeground=[("readonly", self.TEXT_COLOR)],
+                  background=[("readonly", self.LIGHT_BG)],
+                  foreground=[("readonly", self.TEXT_COLOR)])
         style.configure("Vertical.TScrollbar", background=self.PRIMARY_COLOR, troughcolor=self.BG_COLOR, arrowcolor=self.HEADER_FG)
         style.configure("Horizontal.TScrollbar", background=self.PRIMARY_COLOR, troughcolor=self.BG_COLOR, arrowcolor=self.HEADER_FG)
         style.configure("TPanedWindow", background=self.BORDER_COLOR)
