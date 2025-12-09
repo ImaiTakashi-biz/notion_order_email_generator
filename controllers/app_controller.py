@@ -266,8 +266,11 @@ class Application(ttk.Frame):
         for item in items:
             for dept in (item.get("departments") or []):
                 dept = dept.strip()
-                if dept and dept not in supplier_departments:
-                    supplier_departments.append(dept)
+                if dept:
+                    # Notion名を表示名に変換
+                    display_name = config.convert_notion_name_to_display_name(dept)
+                    if display_name not in supplier_departments:
+                        supplier_departments.append(display_name)
         department_for_pdf = next((dept for dept in self.selected_departments if dept in supplier_departments), None)
         if not department_for_pdf and supplier_departments:
             department_for_pdf = supplier_departments[0]
@@ -375,8 +378,11 @@ class Application(ttk.Frame):
         for item in items:
             for dept in (item.get("departments") or []):
                 dept = dept.strip()
-                if dept and dept not in supplier_departments:
-                    supplier_departments.append(dept)
+                if dept:
+                    # Notion名を表示名に変換
+                    display_name = config.convert_notion_name_to_display_name(dept)
+                    if display_name not in supplier_departments:
+                        supplier_departments.append(display_name)
         department_for_mail = next((dept for dept in self.selected_departments if dept in supplier_departments), None)
         if not department_for_mail and supplier_departments:
             department_for_mail = supplier_departments[0]
@@ -421,13 +427,16 @@ class Application(ttk.Frame):
         department_guidance_numbers = config.load_department_guidance_numbers()
         
         def resolve_departments(items: List[Dict[str, Any]]) -> List[str]:
-            """アイテムから部署リストを解決する"""
+            """アイテムから部署リストを解決する（Notion名を表示名に変換）"""
             departments = []
             for item in items:
                 for dept in (item.get("departments") or []):
                     dept = dept.strip()
-                    if dept and dept not in departments:
-                        departments.append(dept)
+                    if dept:
+                        # Notion名を表示名に変換
+                        display_name = config.convert_notion_name_to_display_name(dept)
+                        if display_name not in departments:
+                            departments.append(display_name)
             return departments
         
         def render_pdf(supplier: str, items: List[Dict[str, Any]]) -> Tuple[str, Optional[str], Optional[str]]:
@@ -644,14 +653,10 @@ class Application(ttk.Frame):
                 if dep_name in self.department_defaults:
                     default_account_key = self.department_defaults[dep_name]
                     break
-        if not default_account_key:
-            if self.department_defaults:
-                first_dep_name = next(iter(self.department_defaults.keys()), None)
-                if first_dep_name:
-                    default_account_key = self.department_defaults.get(first_dep_name)
-        if not default_account_key or default_account_key not in self.accounts:
-            default_account_key = next(iter(self.accounts), None)
-        if default_account_key:
+        if default_account_key and default_account_key in self.accounts:
             default_display_name = self.accounts[default_account_key].get("display_name", default_account_key)
             self.selected_account_display_name.set(default_display_name)
+        else:
+            # 部署名が未選択の場合は未設定（空）にする
+            self.selected_account_display_name.set("")
 

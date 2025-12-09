@@ -86,6 +86,57 @@ def load_department_guidance_numbers() -> Dict[str, str]:
     """
     return _settings.get("department_guidance_numbers", {})
 
+def load_department_name_mapping() -> Dict[str, str]:
+    """
+    読み込まれた設定から部署名のマッピング（表示名 → Notion名）を返します。
+    マッピングが設定されていない場合は、表示名をそのまま返すための空の辞書を返します。
+    """
+    return _settings.get("department_name_mapping", {})
+
+def convert_display_name_to_notion_name(display_name: str) -> str:
+    """
+    表示名（アプリで使用する名前）をNotion名に変換します。
+    マッピングが存在しない場合は、表示名をそのまま返します。
+    
+    Args:
+        display_name: アプリで表示する部署名
+        
+    Returns:
+        Notionで使用する部署名
+    """
+    mapping = load_department_name_mapping()
+    return mapping.get(display_name, display_name)
+
+def convert_display_names_to_notion_names(display_names: List[str]) -> List[str]:
+    """
+    表示名のリストをNotion名のリストに変換します。
+    
+    Args:
+        display_names: アプリで表示する部署名のリスト
+        
+    Returns:
+        Notionで使用する部署名のリスト
+    """
+    return [convert_display_name_to_notion_name(name) for name in display_names]
+
+def convert_notion_name_to_display_name(notion_name: str) -> str:
+    """
+    Notion名を表示名（アプリで使用する名前）に変換します。
+    マッピングが存在しない場合は、Notion名をそのまま返します。
+    
+    Args:
+        notion_name: Notionで使用する部署名
+        
+    Returns:
+        アプリで表示する部署名
+    """
+    mapping = load_department_name_mapping()
+    # マッピングの逆引き（値からキーを探す）
+    for display_name, mapped_notion_name in mapping.items():
+        if mapped_notion_name == notion_name:
+            return display_name
+    return notion_name
+
 
 def validate_config() -> Tuple[bool, List[str]]:
     """設定値の妥当性を検証する"""

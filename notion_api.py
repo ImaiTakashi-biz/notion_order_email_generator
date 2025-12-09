@@ -114,8 +114,10 @@ def get_order_data_from_notion(department_names: Optional[List[str]] = None) -> 
             }
 
             if department_names:
+                # 表示名をNotion名に変換
+                notion_department_names = config.convert_display_names_to_notion_names(department_names)
                 department_filters = [
-                    {"property": "部署名", "multi_select": {"contains": name}} for name in department_names
+                    {"property": "部署名", "multi_select": {"contains": name}} for name in notion_department_names
                 ]
                 department_condition = (
                     department_filters[0] if len(department_filters) == 1 else {"or": department_filters}

@@ -34,12 +34,8 @@ def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
         _loggers[name] = logger
         return logger
     
-    # コンソールハンドラーのみ
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
-    console_formatter = logging.Formatter(LOG_FORMAT, DATE_FORMAT)
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
+    # ハンドラーなし（ログはUIの「通知メッセージ」エリアにのみ表示）
+    # ターミナルへの出力は行わない
     
     _loggers[name] = logger
     return logger

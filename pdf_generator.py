@@ -77,6 +77,8 @@ def get_custom_styles() -> Dict[str, ParagraphStyle]:
     styles.add(ParagraphStyle(name='Supplier_J', parent=styles['Normal'], fontName=font_name, fontSize=14, leading=17))
     # 担当者名（インデント付き）用スタイル: 全角一文字分のインデント
     styles.add(ParagraphStyle(name='Supplier_Indent_J', parent=styles['Supplier_J'], leftIndent=44))
+    # 担当者名（部署名と同じ位置）用スタイル: 「担当: 」の文字数分のインデント（全角3文字分）
+    styles.add(ParagraphStyle(name='Contact_Indent_J', parent=styles['Normal_J'], leftIndent=33))
 
     return styles
 
@@ -118,14 +120,29 @@ def create_order_pdf(
         company_info = config.AppConstants.COMPANY_INFO
         guidance_number = sender_info.get('guidance_number', '')
         tel_line = f"TEL: {company_info['tel_base']}" + (f"（ガイダンス{guidance_number}番）" if guidance_number else "")
+        
+        # 担当者情報の作成（デジタルイノベーション推進部の場合は改行）
+        contact_name = sender_info.get('name', '')
+        if selected_department == "デジタルイノベーション推進部":
+            # 部署名と担当者名を2行に分ける
+            contact_paragraphs = [
+                Paragraph(f"担当: {selected_department}", styles['Normal_J']),
+                Paragraph(contact_name, styles['Contact_Indent_J'])
+            ]
+        else:
+            # 通常は1行に表示
+            contact_paragraphs = [
+                Paragraph(f"担当: {selected_department or ''} {contact_name}", styles['Normal_J'])
+            ]
+        
         sender_p_list = [
             Paragraph(company_info['name'], styles['Normal_J']),
             Paragraph(f"{company_info['postal_code']} {company_info['address']}", styles['Normal_J']),
             Paragraph(tel_line, styles['Normal_J']),
             Paragraph(f"URL: {company_info['url']}", styles['Normal_J']),
-            Paragraph(f"担当: {selected_department or ''} {sender_info.get('name', '')}", styles['Normal_J']),
-            Paragraph(f"Email: {sender_info.get('email', '')}", styles['Normal_J'])
         ]
+        sender_p_list.extend(contact_paragraphs)
+        sender_p_list.append(Paragraph(f"Email: {sender_info.get('email', '')}", styles['Normal_J']))
 
         # --- レイアウトの構築 ---
         # 1. 発行日 (一番上、右寄せ)

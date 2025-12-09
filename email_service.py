@@ -76,8 +76,13 @@ def send_smtp_mail(
         company = config.AppConstants.COMPANY_INFO
         msg["Subject"] = template['subject']
 
+        # 発注担当情報の作成（デジタルイノベーション推進部の場合は改行）
         if selected_department:
-            order_contact = f"{selected_department} {account_name}"
+            if selected_department == "デジタルイノベーション推進部":
+                # 部署名と担当者名を2行に分ける（「発注担当： 」の位置に合わせるため、全角10文字分のスペース）
+                order_contact = f"発注担当： {selected_department}\n{' ' * 20}{account_name}"
+            else:
+                order_contact = f"{selected_department} {account_name}"
         else:
             order_contact = account_name
 
@@ -93,7 +98,7 @@ def send_smtp_mail(
             f"{template['body']}\n\n"
             "∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝∝\n"
             f"{company['name']}\n"
-            f"発注担当： {order_contact}\n"
+            f"{order_contact if selected_department == 'デジタルイノベーション推進部' else f'発注担当： {order_contact}'}\n"
             f"{company['postal_code']} {company['address']}\n"
             f"Email: {sender_creds['sender']}\n"
             f"{tel_line}\n"

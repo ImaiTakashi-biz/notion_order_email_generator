@@ -36,7 +36,7 @@ class TopPane(ttk.Frame):
 
         for i, name in enumerate(departments):
             cb = ttk.Checkbutton(checkbox_container, text=name, variable=self.app.department_vars[name], style="Highlight.TCheckbutton", command=self.app.on_department_selection_change)
-            cb.grid(row=0, column=i, padx=(5, 15), pady=(0,5), sticky='w')
+            cb.grid(row=0, column=i, padx=(5, 15), pady=(0, 5), sticky='w')
 
         # --- 右側のアカウント選択 ---
         account_frame = ttk.Frame(sub_pane, style="Highlight.TFrame", relief="solid", borderwidth=1, padding=(0, 5))
