@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo 注文書メール自動作成App ビルドスクリプト
+echo OrderMailer ビルドスクリプト
 echo ========================================
 echo.
 
@@ -38,7 +38,7 @@ echo [情報] PyInstallerでビルドを開始します...
 echo.
 
 REM PyInstallerでビルド実行
-pyinstaller "注文書メール自動作成App.spec"
+pyinstaller "OrderMailer.spec"
 
 if %ERRORLEVEL% EQU 0 (
     echo.
@@ -46,7 +46,7 @@ if %ERRORLEVEL% EQU 0 (
     echo ビルドが完了しました！
     echo ========================================
     echo.
-    echo 実行ファイルの場所: dist\注文書メール自動作成App.exe
+    echo 実行ファイルの場所: dist\OrderMailer.exe
     echo.
     echo 配布時は、この.exeファイルのみを配布してください。
     echo .envとemail_accounts.jsonは実行ファイルに含まれています。

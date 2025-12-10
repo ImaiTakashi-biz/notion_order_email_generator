@@ -46,7 +46,7 @@ def main():
 
     # 検証が成功した場合のみGUIを起動
     root = tk.Tk()
-    root.title("Notion 注文書メール自動作成アプリ")
+    root.title("OrderMailer")
     
     # アイコンの設定（存在する場合）
     icon_path = _get_resource_path("app_icon.ico")

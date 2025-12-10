@@ -31,7 +31,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='注文書メール自動作成App',
+    name='OrderMailer',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
