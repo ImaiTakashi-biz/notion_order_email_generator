@@ -31,10 +31,42 @@ else:
     # .envファイルが存在しない場合でも、環境変数から読み込む
     load_dotenv()
 
+def _get_user_config_path(file_path: str = "email_accounts.json") -> str:
+    """
+    ユーザーのAppDataディレクトリ内のアプリケーションディレクトリのパスを取得する
+    
+    Args:
+        file_path: 設定ファイル名
+        
+    Returns:
+        ユーザー設定ファイルのフルパス
+    """
+    # WindowsのAppDataディレクトリを使用
+    appdata_dir = os.getenv('APPDATA', os.path.expanduser('~'))
+    app_dir = os.path.join(appdata_dir, 'OrderMailer')
+    
+    # ディレクトリが存在しない場合は作成
+    os.makedirs(app_dir, exist_ok=True)
+    
+    return os.path.join(app_dir, file_path)
+
 # --- JSONファイルから設定を一括で読み込む ---
 def _load_settings_from_json(file_path: str = "email_accounts.json") -> Dict[str, Any]:
     """設定ファイル(JSON)を読み込む内部関数"""
-    # PyInstaller環境に対応したパスを取得
+    # 優先順位：ユーザーのAppData > 埋め込まれたファイル（一時ディレクトリ）
+    
+    # 1. ユーザーのAppDataディレクトリにあるファイルを優先的に読み込む
+    user_config_path = _get_user_config_path(file_path)
+    if os.path.exists(user_config_path):
+        try:
+            with open(user_config_path, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+                if isinstance(settings, dict):
+                    return settings
+        except (json.JSONDecodeError, IOError):
+            pass  # エラー時は埋め込まれたファイルを試す
+    
+    # 2. 埋め込まれたファイル（一時ディレクトリまたは通常実行時のスクリプトディレクトリ）から読み込む
     resource_path = _get_resource_path(file_path)
     
     if not os.path.exists(resource_path):
@@ -198,22 +230,11 @@ def validate_config() -> Tuple[bool, List[str]]:
 def save_settings(json_data: Dict[str, Any]) -> Tuple[bool, str]:
     """
     GUIから受け取った設定をJSONファイルに保存する
-    PyInstaller環境では実行ファイルと同じディレクトリに保存する
+    ユーザーのAppDataディレクトリに保存する（実行ファイルと同じディレクトリには保存しない）
     """
     try:
-        # PyInstaller環境では実行ファイルのディレクトリに保存
-        # 通常実行時はスクリプトのディレクトリに保存
-        if hasattr(sys, '_MEIPASS'):
-            # 実行ファイルのディレクトリを取得
-            if getattr(sys, 'frozen', False):
-                # PyInstallerでビルドされた場合
-                base_path = os.path.dirname(sys.executable)
-            else:
-                base_path = os.path.dirname(os.path.abspath(__file__))
-        else:
-            base_path = os.path.dirname(os.path.abspath(__file__))
-        
-        json_path = os.path.join(base_path, "email_accounts.json")
+        # ユーザーのAppDataディレクトリに保存
+        json_path = _get_user_config_path("email_accounts.json")
         
         # JSON ファイルの保存
         with open(json_path, 'w', encoding='utf-8') as f:
