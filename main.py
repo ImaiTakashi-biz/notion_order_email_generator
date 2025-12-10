@@ -1,8 +1,28 @@
 import tkinter as tk
 from tkinter import messagebox
 import os
+import sys
 import config
 from controllers.app_controller import Application
+
+def _get_resource_path(relative_path: str) -> str:
+    """
+    PyInstallerでビルドされた場合と通常実行の場合の両方に対応してリソースパスを取得する
+    
+    Args:
+        relative_path: リソースファイルの相対パス
+        
+    Returns:
+        リソースファイルの絶対パス
+    """
+    # PyInstallerでビルドされた場合、一時ディレクトリのパスがsys._MEIPASSに設定される
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+        # 通常実行時はスクリプトのディレクトリを基準にする
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    return os.path.join(base_path, relative_path)
 
 def main():
     """
@@ -29,7 +49,7 @@ def main():
     root.title("Notion 注文書メール自動作成アプリ")
     
     # アイコンの設定（存在する場合）
-    icon_path = "app_icon.ico"
+    icon_path = _get_resource_path("app_icon.ico")
     if os.path.exists(icon_path):
         try:
             root.iconbitmap(icon_path)

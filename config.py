@@ -1,18 +1,46 @@
 import os
+import sys
 import json
 from dotenv import load_dotenv
 from typing import Dict, Any, List, Tuple
 
-# .envファイルからNotionのトークンなどを読み込む
-load_dotenv()
+def _get_resource_path(relative_path: str) -> str:
+    """
+    PyInstallerでビルドされた場合と通常実行の場合の両方に対応してリソースパスを取得する
+    
+    Args:
+        relative_path: リソースファイルの相対パス
+        
+    Returns:
+        リソースファイルの絶対パス
+    """
+    # PyInstallerでビルドされた場合、一時ディレクトリのパスがsys._MEIPASSに設定される
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+        # 通常実行時はスクリプトのディレクトリを基準にする
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    return os.path.join(base_path, relative_path)
+
+# .envファイルのパスを取得して読み込む
+env_path = _get_resource_path(".env")
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+else:
+    # .envファイルが存在しない場合でも、環境変数から読み込む
+    load_dotenv()
 
 # --- JSONファイルから設定を一括で読み込む ---
 def _load_settings_from_json(file_path: str = "email_accounts.json") -> Dict[str, Any]:
     """設定ファイル(JSON)を読み込む内部関数"""
-    if not os.path.exists(file_path):
+    # PyInstaller環境に対応したパスを取得
+    resource_path = _get_resource_path(file_path)
+    
+    if not os.path.exists(resource_path):
         return {}
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(resource_path, 'r', encoding='utf-8') as f:
             # json.loadがNoneを返す可能性も考慮
             settings = json.load(f)
             return settings if isinstance(settings, dict) else {}
@@ -170,10 +198,25 @@ def validate_config() -> Tuple[bool, List[str]]:
 def save_settings(json_data: Dict[str, Any]) -> Tuple[bool, str]:
     """
     GUIから受け取った設定をJSONファイルに保存する
+    PyInstaller環境では実行ファイルと同じディレクトリに保存する
     """
     try:
+        # PyInstaller環境では実行ファイルのディレクトリに保存
+        # 通常実行時はスクリプトのディレクトリに保存
+        if hasattr(sys, '_MEIPASS'):
+            # 実行ファイルのディレクトリを取得
+            if getattr(sys, 'frozen', False):
+                # PyInstallerでビルドされた場合
+                base_path = os.path.dirname(sys.executable)
+            else:
+                base_path = os.path.dirname(os.path.abspath(__file__))
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+        
+        json_path = os.path.join(base_path, "email_accounts.json")
+        
         # JSON ファイルの保存
-        with open("email_accounts.json", 'w', encoding='utf-8') as f:
+        with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(json_data, f, indent=2, ensure_ascii=False)
         
         return True, "設定を保存しました。"
