@@ -15,7 +15,21 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # サイズ削減: 実行時に不要な開発用/テスト用依存を除外（機能・UIは変更しない）
+    excludes=[
+        # pytest stack (dev only)
+        'pytest',
+        '_pytest',
+        'pluggy',
+        'py',
+        # occasionally pulled-in but unused here
+        'numpy',
+        'numpy.core',
+        'numpy.testing',
+        'pygments',
+        'IPython',
+        'jedi',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
