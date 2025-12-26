@@ -158,14 +158,25 @@ def get_order_data_from_notion(department_names: Optional[List[str]] = None) -> 
                 if isinstance(entry, dict) and entry.get("name")
             ]
 
-            maker = _get_safe_text(props.get("メーカー名", {}).get("rich_text")).strip()
-            part_number = _get_safe_text(props.get("品番", {}).get("rich_text")).strip()
+            maker = _get_safe_text(props.get("メーカー名", {}).get("rich_text", [])).strip()
+            part_number = _get_safe_text(props.get("品番", {}).get("rich_text", [])).strip()
             quantity = int(_get_safe_number(props.get("数量")) or 0)
-            remarks = _get_safe_text(props.get("備考", {}).get("rich_text")).strip()
-            supplier_name = _get_safe_text(supplier_props.get("購入先", {}).get("title")).strip()
-            sales_contact = _get_safe_text(supplier_props.get("営業担当", {}).get("rich_text")).strip()
+            remarks = _get_safe_text(props.get("備考", {}).get("rich_text", [])).strip()
+            
+            # 「仕入先名」フィールドの取得（titleまたはrich_textに対応）
+            supplier_name_prop = supplier_props.get("仕入先名", {})
+            supplier_name = ""
+            
+            if supplier_name_prop.get("title"):
+                supplier_name = _get_safe_text(supplier_name_prop.get("title", [])).strip()
+            elif supplier_name_prop.get("rich_text"):
+                supplier_name = _get_safe_text(supplier_name_prop.get("rich_text", [])).strip()
+            elif supplier_name_prop.get("select"):
+                supplier_name = supplier_name_prop.get("select", {}).get("name", "").strip()
+            
+            sales_contact = _get_safe_text(supplier_props.get("営業担当者名", {}).get("rich_text", [])).strip()
             email_to = (_get_safe_email(supplier_props.get("メール")) or "").strip()
-            email_cc = (_get_safe_email(supplier_props.get("メール CC:")) or "").strip()
+            email_cc = (_get_safe_email(supplier_props.get("メールCC")) or "").strip()
 
             order_list.append(
                 {
