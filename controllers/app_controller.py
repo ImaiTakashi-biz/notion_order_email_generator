@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple, Callable
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from version import APP_NAME, APP_VERSION, BUILD_DATE
+
 # 作成したモジュールをインポート
 import config
 import notion_api
@@ -136,7 +138,18 @@ class Application(ttk.Frame):
         settings_menu.add_command(label="設定を開く", command=self.open_settings_window)
         settings_menu.add_command(label="設定リロード", command=self.reload_ui_after_settings_change)
         menubar.add_cascade(label="　⚙ 設定", menu=settings_menu)
+
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="バージョン情報", command=self.show_about_dialog)
+        menubar.add_cascade(label="ヘルプ", menu=help_menu)
         self.master.config(menu=menubar)
+
+    def show_about_dialog(self) -> None:
+        messagebox.showinfo(
+            "バージョン情報",
+            f"{APP_NAME}\nバージョン: {APP_VERSION}\nビルド日: {BUILD_DATE}",
+            parent=self.master,
+        )
     
     def create_widgets(self) -> None:
         """ウィジェットを作成する"""
@@ -659,4 +672,3 @@ class Application(ttk.Frame):
         else:
             # 部署名が未選択の場合は未設定（空）にする
             self.selected_account_display_name.set("")
-

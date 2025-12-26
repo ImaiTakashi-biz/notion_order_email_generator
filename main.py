@@ -4,6 +4,7 @@ import os
 import sys
 import config
 from controllers.app_controller import Application
+from version import APP_NAME, APP_VERSION
 
 def _get_resource_path(relative_path: str) -> str:
     """
@@ -46,7 +47,7 @@ def main():
 
     # 検証が成功した場合のみGUIを起動
     root = tk.Tk()
-    root.title("OrderMailer")
+    root.title(f"{APP_NAME}  {APP_VERSION}")
     
     # アイコンの設定（存在する場合）
     icon_path = _get_resource_path("app_icon.ico")

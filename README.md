@@ -115,23 +115,20 @@ pip install pyinstaller
 
 #### 2. 実行ファイルのビルド
 
-以下のコマンドで、onefileモードで実行ファイルを生成します。`.env`と`email_accounts.json`も実行ファイルに含めます。
+以下のいずれかでビルドします（生成されるexe名は `OrderMailer.exe` 固定で、バージョンはexe名に含めません）。
+
+- `build.bat` を実行
+- または、以下のコマンドを実行
 
 ```bash
-pyinstaller --onefile --noconsole --name=NotionOrderApp --icon=app_icon.ico --add-data ".env;." --add-data "email_accounts.json;." main.py
+pyinstaller "OrderMailer.spec"
 ```
 
-**オプション説明:**
-- `--onefile`: 単一の実行ファイルとしてビルド
-- `--noconsole`: コンソールウィンドウを表示しない（GUIアプリ向け）
-- `--name=NotionOrderApp`: 生成される実行ファイルの名前を指定
-- `--icon=app_icon.ico`: アプリケーションのアイコンを指定
-- `--add-data ".env;."`: `.env`ファイルを実行ファイルに含める（Windows形式: `ファイルパス;展開先`）
-- `--add-data "email_accounts.json;."`: `email_accounts.json`ファイルを実行ファイルに含める
+`OrderMailer.spec` に、配布に必要なファイル（`.env` / `email_accounts.json` / `app_icon.ico`）の同梱設定が含まれています。
 
 **注意:** ビルド前に、プロジェクトルートに`.env`、`email_accounts.json`、`app_icon.ico`が存在することを確認してください。
 
-ビルドが完了すると、`dist/NotionOrderApp.exe`が生成されます。
+ビルドが完了すると、`dist/OrderMailer.exe`が生成されます。
 
 #### 3. 配布時のファイル構成
 
@@ -139,13 +136,33 @@ pyinstaller --onefile --noconsole --name=NotionOrderApp --icon=app_icon.ico --ad
 
 ```
 配布フォルダ/
-└── NotionOrderApp.exe        # 実行ファイル（設定ファイルを含む）
+└── OrderMailer.exe        # 実行ファイル（設定ファイルを含む）
 ```
 
 **重要:**
 - 配布物は`.exe`ファイル1つだけです
 - `.env`と`email_accounts.json`は実行ファイルに含まれているため、別途配布する必要はありません
 - 実行ファイルを実行すると、一時ディレクトリに設定ファイルが展開され、アプリケーションが読み込みます
+
+## バージョン
+
+現在のバージョン: `v1.0.0`（ビルド日: `2025-12-25`）
+
+### バージョン管理方針
+本アプリは Semantic Versioning に準拠し、
+以下の形式でバージョンを管理します。
+
+vメジャー.マイナー.パッチ（例：v1.2.3）
+
+- メジャー：大きな仕様変更（DB構造変更など）
+- マイナー：機能追加・画面追加
+- パッチ：バグ修正・軽微な調整
+
+### リリース手順
+1. `version.py` の `APP_VERSION` を更新
+2. `CHANGELOG.md` に変更内容を追記
+3. exeをビルド（ファイル名は固定）
+4. 配布・更新
 
 ## GUIの操作方法
 
@@ -172,6 +189,8 @@ pyinstaller --onefile --noconsole --name=NotionOrderApp --icon=app_icon.ico --ad
 ├── cache_manager.py           # Notionデータ取得のキャッシュ管理
 ├── requirements.txt           # 依存ライブラリリスト
 ├── README.md                  # このファイル
+├── CHANGELOG.md               # 変更履歴
+├── version.py                 # バージョン情報の一元管理
 ├── controllers/               # コントローラーモジュール
 │   ├── __init__.py
 │   └── app_controller.py     # アプリケーションのメインコントローラー
